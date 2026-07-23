@@ -1,4 +1,4 @@
-"""SQLite layer for PromptPool. One file, WAL mode, short-lived connections."""
+"""SQLite layer for SpareCycles. One file, WAL mode, short-lived connections."""
 
 import hashlib
 import os
@@ -8,10 +8,10 @@ import time
 from contextlib import contextmanager
 
 DATA_DIR = os.environ.get(
-    "PROMPTPOOL_DATA",
+    "SPARECYCLES_DATA",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data"),
 )
-DB_PATH = os.path.join(DATA_DIR, "promptpool.db")
+DB_PATH = os.path.join(DATA_DIR, "sparecycles.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts(
@@ -83,6 +83,13 @@ CREATE TABLE IF NOT EXISTS pair_codes(
   code TEXT PRIMARY KEY,
   account_id INTEGER NOT NULL REFERENCES accounts(id),
   expires_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recovery_codes(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id INTEGER NOT NULL REFERENCES accounts(id),
+  code_hash TEXT UNIQUE NOT NULL,
+  created_at REAL NOT NULL,
+  used_at REAL
 );
 """
 

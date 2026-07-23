@@ -1,4 +1,4 @@
-"""PromptPool server: marketplace API, node queue, OpenAI-compatible proxy.
+"""SpareCycles server: marketplace API, node queue, OpenAI-compatible proxy.
 
 Run:  uvicorn server.main:app --port 8377
 """
@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import time
+import urllib.request
 from fnmatch import fnmatch
 
 from fastapi import FastAPI, HTTPException, Request
@@ -21,7 +22,7 @@ from . import db
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web")
 NODE_ONLINE_WINDOW = 90  # seconds since last poll to count a node as online
 
-app = FastAPI(title="PromptPool")
+app = FastAPI(title="SpareCycles")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
@@ -221,6 +222,36 @@ def create_job(conn, project, body: dict, kind: str) -> int:
 
 # ---------------------------------------------------------------- accounts
 
+RECOVERY_CODE_COUNT = 5
+
+
+def mint_recovery_codes(conn, account_id: int) -> list[str]:
+    """Replace any unused recovery codes with a fresh one-time-use set."""
+    conn.execute(
+        "DELETE FROM recovery_codes WHERE account_id=? AND used_at IS NULL",
+        (account_id,),
+    )
+    codes = []
+    for _ in range(RECOVERY_CODE_COUNT):
+        code = "SCR-" + "-".join(secrets.token_hex(2).upper() for _ in range(2))
+        conn.execute(
+            "INSERT INTO recovery_codes(account_id, code_hash, created_at) "
+            "VALUES(?,?,?)",
+            (account_id, db.hash_key(code), db.now()),
+        )
+        codes.append(code)
+    return codes
+
+
+def rotate_account_key(conn, account_id: int) -> str:
+    """Issue a new account API key; the old one stops working immediately."""
+    key, key_hash = db.new_key("sck")
+    conn.execute(
+        "UPDATE accounts SET key_hash=? WHERE id=?", (key_hash, account_id)
+    )
+    return key
+
+
 @app.post("/api/register")
 async def register(request: Request):
     body = await request.json()
@@ -228,7 +259,7 @@ async def register(request: Request):
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,29}", name):
         raise HTTPException(400, "name must be 3-30 chars: a-z, 0-9, dashes")
     display = (body.get("display_name") or name).strip()[:60]
-    key, key_hash = db.new_key("ppk")
+    key, key_hash = db.new_key("sck")
     with db.connect() as conn:
         try:
             cur = conn.execute(
@@ -238,10 +269,80 @@ async def register(request: Request):
             )
         except Exception:
             raise HTTPException(409, "that account name is taken")
+        codes = mint_recovery_codes(conn, cur.lastrowid)
         return {
             "account": {"id": cur.lastrowid, "name": name, "display_name": display},
             "api_key": key,
-            "note": "Save this key now - it is hashed server-side and never shown again.",
+            "recovery_codes": codes,
+            "note": "Save the key AND the recovery codes now - both are hashed "
+                    "server-side and never shown again. Each recovery code can "
+                    "be traded once for a fresh API key if you lose yours.",
+        }
+
+
+@app.post("/api/recover")
+async def recover_with_code(request: Request):
+    body = await request.json()
+    name = (body.get("name") or "").strip().lower()
+    code = (body.get("recovery_code") or "").strip().upper()
+    fail = HTTPException(401, "invalid username or recovery code")
+    if not name or not code:
+        raise fail
+    with db.connect() as conn:
+        acct = conn.execute(
+            "SELECT * FROM accounts WHERE name=?", (name,)
+        ).fetchone()
+        if not acct:
+            raise fail
+        row = conn.execute(
+            "SELECT * FROM recovery_codes WHERE account_id=? AND code_hash=? "
+            "AND used_at IS NULL",
+            (acct["id"], db.hash_key(code)),
+        ).fetchone()
+        if not row:
+            raise fail
+        conn.execute(
+            "UPDATE recovery_codes SET used_at=? WHERE id=?", (db.now(), row["id"])
+        )
+        new_api_key = rotate_account_key(conn, acct["id"])
+        left = conn.execute(
+            "SELECT COUNT(*) FROM recovery_codes WHERE account_id=? "
+            "AND used_at IS NULL", (acct["id"],),
+        ).fetchone()[0]
+        return {
+            "account": acct["name"],
+            "api_key": new_api_key,
+            "recovery_codes_left": left,
+            "note": "Old API key is now invalid. Save the new one - and "
+                    "generate fresh recovery codes if you are running low.",
+        }
+
+
+@app.post("/api/recover/node")
+async def recover_with_node(request: Request):
+    """A paired node's token proves account ownership - it can mint a new
+    account key (run `node_connector.py --recover` on the node machine)."""
+    with db.connect() as conn:
+        node = require_node(conn, request)
+        acct = conn.execute(
+            "SELECT * FROM accounts WHERE id=?", (node["account_id"],)
+        ).fetchone()
+        new_api_key = rotate_account_key(conn, acct["id"])
+        return {
+            "account": acct["name"],
+            "api_key": new_api_key,
+            "note": "Old API key is now invalid. Save the new one.",
+        }
+
+
+@app.post("/api/recovery_codes")
+async def regenerate_recovery_codes(request: Request):
+    with db.connect() as conn:
+        acct = require_account(conn, request)
+        codes = mint_recovery_codes(conn, acct["id"])
+        return {
+            "recovery_codes": codes,
+            "note": "Previous unused codes are now invalid. Save these once.",
         }
 
 
@@ -261,9 +362,14 @@ async def me(request: Request):
             "SELECT p.slug, p.name FROM supports s JOIN projects p "
             "ON p.id=s.project_id WHERE s.account_id=?", (acct["id"],)
         ).fetchall()
+        codes_left = conn.execute(
+            "SELECT COUNT(*) FROM recovery_codes WHERE account_id=? "
+            "AND used_at IS NULL", (acct["id"],),
+        ).fetchone()[0]
         t = db.now()
         return {
             "account": {"name": acct["name"], "display_name": acct["display_name"]},
+            "recovery_codes_left": codes_left,
             "nodes": [
                 {
                     "id": n["id"], "name": n["name"],
@@ -317,7 +423,7 @@ async def create_project(request: Request):
         slug = slugify(body.get("slug") or name)
         if not slug:
             raise HTTPException(400, "could not derive a slug from that name")
-        key, key_hash = db.new_key("ppi")
+        key, key_hash = db.new_key("sci")
         try:
             cur = conn.execute(
                 """INSERT INTO projects(owner_id, slug, name, tagline, description,
@@ -506,7 +612,7 @@ async def register_node(request: Request):
         if not row:
             raise HTTPException(401, "invalid or expired pairing code")
         conn.execute("DELETE FROM pair_codes WHERE code=?", (code,))
-        token, token_hash = db.new_key("ppn")
+        token, token_hash = db.new_key("scn")
         cur = conn.execute(
             "INSERT INTO nodes(account_id, name, token_hash, runners, models, "
             "created_at) VALUES(?,?,?,?,?,?)",
@@ -611,6 +717,125 @@ async def fail_job(job_id: int, request: Request):
         return {"ok": True}
 
 
+# ------------------------------------------------------- model catalog
+
+# Live model lists come from each provider's models API when the server has
+# that provider's key in its environment. The keys are used for this
+# read-only metadata call ONLY — inference always happens on donor nodes.
+FALLBACK_CATALOG = {
+    "Claude": ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5",
+               "claude-fable-5"],
+    "OpenAI": ["gpt-5.1", "gpt-5.1-codex", "gpt-5", "gpt-5-mini", "gpt-5-nano"],
+    "Grok": ["grok-4.1", "grok-4", "grok-4-fast", "grok-code-fast-1"],
+}
+CATALOG_TTL = 3600          # when every provider answered
+CATALOG_TTL_PARTIAL = 300   # retry sooner if any provider fell back
+_catalog_cache: dict = {"at": 0.0, "ttl": 0, "data": None}
+
+
+def _provider_get(url: str, headers: dict) -> dict:
+    req = urllib.request.Request(url)
+    for k, v in headers.items():
+        req.add_header(k, v)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _fetch_claude_models() -> list[str] | None:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    data = _provider_get(
+        "https://api.anthropic.com/v1/models?limit=100",
+        {"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+    )
+    rows = sorted(data.get("data", []),
+                  key=lambda m: m.get("created_at", ""), reverse=True)
+    return [m["id"] for m in rows]
+
+
+def _fetch_openai_models() -> list[str] | None:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    data = _provider_get(
+        "https://api.openai.com/v1/models",
+        {"Authorization": f"Bearer {api_key}"},
+    )
+    skip = ("audio", "realtime", "tts", "transcribe", "embed", "image",
+            "dall-e", "whisper", "moderation", "davinci", "babbage", "search")
+    rows = sorted(data.get("data", []),
+                  key=lambda m: m.get("created", 0), reverse=True)
+    return [
+        m["id"] for m in rows
+        if (m["id"].startswith("gpt-") or re.match(r"^o\d", m["id"]))
+        and not any(s in m["id"] for s in skip)
+    ]
+
+
+def _fetch_grok_models() -> list[str] | None:
+    api_key = os.environ.get("XAI_API_KEY")
+    if not api_key:
+        return None
+    data = _provider_get(
+        "https://api.x.ai/v1/models",
+        {"Authorization": f"Bearer {api_key}"},
+    )
+    rows = sorted(data.get("data", []),
+                  key=lambda m: m.get("created", 0), reverse=True)
+    return [m["id"] for m in rows]
+
+
+def _fetch_or_none(fn) -> list[str] | None:
+    try:
+        return fn() or None
+    except Exception:
+        return None
+
+
+def _online_local_models(exclude: set[str]) -> list[str]:
+    """Concrete (non-glob) model ids advertised by currently-online nodes —
+    e.g. llama3.1:8b served via Ollama or LM Studio on a donor machine."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT models FROM nodes WHERE last_seen > ?",
+            (db.now() - NODE_ONLINE_WINDOW,),
+        ).fetchall()
+    return sorted({
+        m for r in rows for m in json.loads(r["models"])
+        if m and not any(c in m for c in "*?[") and m not in exclude
+    })
+
+
+@app.get("/api/models/catalog")
+async def models_catalog():
+    if _catalog_cache["data"] and time.time() - _catalog_cache["at"] < _catalog_cache["ttl"]:
+        data = _catalog_cache["data"]
+    else:
+        fetched = await asyncio.gather(
+            asyncio.to_thread(_fetch_or_none, _fetch_claude_models),
+            asyncio.to_thread(_fetch_or_none, _fetch_openai_models),
+            asyncio.to_thread(_fetch_or_none, _fetch_grok_models),
+        )
+        providers, live = {}, {}
+        for name, models in zip(FALLBACK_CATALOG, fetched):
+            live[name] = models is not None
+            providers[name] = models if models is not None else FALLBACK_CATALOG[name]
+        data = {"providers": providers, "live": live, "fetched_at": time.time()}
+        ttl = CATALOG_TTL if all(live.values()) else CATALOG_TTL_PARTIAL
+        _catalog_cache.update(at=time.time(), ttl=ttl, data=data)
+    # Local models reflect who is online right now, so they bypass the cache.
+    known = {m for models in data["providers"].values() for m in models}
+    local = _online_local_models(known)
+    if not local:
+        return data
+    return {
+        "providers": {**data["providers"], "Local nodes": local},
+        "live": {**data["live"], "Local nodes": True},
+        "fetched_at": data["fetched_at"],
+    }
+
+
 # ------------------------------------------- OpenAI-compatible realtime proxy
 
 def messages_to_prompt(messages: list) -> str:
@@ -649,7 +874,7 @@ async def list_models():
     return {
         "object": "list",
         "data": [
-            {"id": m, "object": "model", "owned_by": "promptpool"} for m in seen
+            {"id": m, "object": "model", "owned_by": "sparecycles"} for m in seen
         ],
     }
 
@@ -710,7 +935,7 @@ async def chat_completions(request: Request):
     if body.get("stream"):
         def sse():
             base = {
-                "id": f"chatcmpl-pp{jid}", "object": "chat.completion.chunk",
+                "id": f"chatcmpl-sc{jid}", "object": "chat.completion.chunk",
                 "created": created, "model": model,
             }
             first = dict(base, choices=[{"index": 0, "delta": {"role": "assistant"},
@@ -729,7 +954,7 @@ async def chat_completions(request: Request):
         return StreamingResponse(sse(), media_type="text/event-stream")
 
     return {
-        "id": f"chatcmpl-pp{jid}",
+        "id": f"chatcmpl-sc{jid}",
         "object": "chat.completion",
         "created": created,
         "model": model,

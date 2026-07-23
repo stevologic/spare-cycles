@@ -147,6 +147,9 @@ table.donors { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 table.donors td, table.donors th { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); text-align: left; }
 table.donors th { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
 
+.diagram { width: 100%; height: auto; display: block; margin: 1.1rem 0 0.3rem; }
+.diagram text { font-family: inherit; }
+
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
 .mt { margin-top: 1rem; }

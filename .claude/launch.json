@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "promptpool",
+      "name": "sparecycles",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "uvicorn", "server.main:app", "--port", "8377"],
       "port": 8377

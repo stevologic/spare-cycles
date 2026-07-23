@@ -1,7 +1,7 @@
-# PromptPool — Vision & Vetting
+# SpareCycles — Vision & Vetting
 
 > **Some devs have tokens and no ideas. Some have ideas and no tokens.**
-> PromptPool is the place where they trade — a marketplace of vibe-coding
+> SpareCycles is the place where they trade — a marketplace of vibe-coding
 > projects, and a pool of donated AI compute that keeps them moving.
 
 This document is the honest vetting of the idea: what's genuinely strong,
@@ -78,7 +78,7 @@ API keys are different — that's your own pay-per-use spend, and donating
 *outputs you paid for* is the clean model.
 
 So the platform's stance is:
-- PromptPool is **donation-only. No money moves. Tokens are never sold.**
+- SpareCycles is **donation-only. No money moves. Tokens are never sold.**
   This keeps the platform out of "reselling API access" territory.
 - Each node operator is responsible for their own provider agreement. The
   connector documentation says so, and the direct-API runners (metered keys,
@@ -113,7 +113,7 @@ gave an honest answer. Don't build fake assurances; build reputation:
 ### 2.5 Cold start
 
 A two-sided marketplace with zero donors is a static website. The design
-dodges this because **PromptPool is useful at N=1 account**: connect your
+dodges this because **SpareCycles is useful at N=1 account**: connect your
 own three machines (work box with Claude, home box with a metered key,
 laptop with codex) and you have a personal compute pool — one URL that
 fans out to whichever of your own runners is alive. Donation is a *layer*
@@ -144,7 +144,7 @@ every payment/ToS problem we just avoided.)
 **AI Donors as a first-class identity.** Public donor leaderboards per
 project and globally; "Powered by 12 AI Donors" badges for READMEs; donor
 profiles listing the projects they've carried. GitHub made a green graph a
-status symbol; PromptPool makes donated tokens one.
+status symbol; SpareCycles makes donated tokens one.
 
 **Pledges, not just polling.** "My node serves `doge-miner` nightly,
 11pm–7am, cap 200k tokens/night." Scheduled, capped, recurring patronage —
@@ -179,7 +179,8 @@ and the strongest spam deterrent available.
 | Batch prompt queue with public job feed | ✅ |
 | OpenAI-compatible `/v1/chat/completions` realtime proxy (incl. streaming) | ✅ |
 | `node-connector.py` — stdlib-only, pairing-code onboarding, auto-detects runners | ✅ |
-| Runners: claude CLI, codex CLI, gemini CLI, cursor-agent, direct Anthropic API, direct OpenAI API, echo | ✅ |
+| Runners: claude/codex/gemini/grok/cursor CLIs, direct Anthropic/OpenAI/xAI APIs, echo | ✅ |
+| Offline model runners: Ollama + LM Studio auto-detected, installed models advertised to the pool | ✅ |
 | Keys stay in node env vars; never transmitted, never stored server-side | ✅ |
 | Karma credits ledger | roadmap |
 | GitHub `issue` job kind → branch → PR | roadmap |

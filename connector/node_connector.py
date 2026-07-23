@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PromptPool node connector — donate your idle AI tokens to projects you support.
+"""SpareCycles node connector — donate your idle AI tokens to projects you support.
 
 Stdlib only. First run (pairing code from your Account page):
 
@@ -28,7 +28,7 @@ import urllib.request
 from fnmatch import fnmatch
 from pathlib import Path
 
-CONFIG_DIR = Path(os.environ.get("PROMPTPOOL_HOME", Path.home() / ".promptpool"))
+CONFIG_DIR = Path(os.environ.get("SPARECYCLES_HOME", Path.home() / ".sparecycles"))
 CONFIG_PATH = CONFIG_DIR / "node.json"
 WORK_DIR = CONFIG_DIR / "workdir"  # empty scratch cwd for CLI runners
 
@@ -55,6 +55,12 @@ CLI_RUNNERS = {
         "cmd": ["gemini", "-m", "{model}", "-p", "{prompt}"],
         "stdin": False,
     },
+    "grok": {
+        "bin": "grok",
+        "models": ["grok*"],
+        "cmd": ["grok", "-p", "{prompt}", "-m", "{model}"],
+        "stdin": False,
+    },
     "cursor-agent": {
         "bin": "cursor-agent",
         "models": ["cursor*"],
@@ -66,7 +72,47 @@ CLI_RUNNERS = {
 API_RUNNERS = {
     "anthropic-api": {"env": "ANTHROPIC_API_KEY", "models": ["claude*"]},
     "openai-api": {"env": "OPENAI_API_KEY", "models": ["gpt*", "o1*", "o3*", "o4*"]},
+    "xai-api": {"env": "XAI_API_KEY", "models": ["grok*"]},
 }
+# Local OpenAI-compatible model servers — fully offline donation, no provider
+# keys, no ToS questions. Detected by probing their model-list endpoint; the
+# node advertises the exact models you have installed.
+LOCAL_SERVERS = {
+    "ollama": {
+        "env_base": "OLLAMA_HOST",
+        "default_base": "http://localhost:11434",
+        "list_path": "/api/tags",
+        "parse": lambda d: [m.get("name") or m.get("model")
+                            for m in d.get("models", [])],
+    },
+    "lmstudio": {
+        "env_base": "LMSTUDIO_HOST",
+        "default_base": "http://localhost:1234",
+        "list_path": "/v1/models",
+        "parse": lambda d: [m.get("id") for m in d.get("data", [])],
+    },
+}
+
+
+def detect_local_servers() -> dict[str, dict]:
+    found = {}
+    for name, spec in LOCAL_SERVERS.items():
+        base = os.environ.get(spec["env_base"], spec["default_base"]).rstrip("/")
+        if not base.startswith("http"):
+            base = "http://" + base
+        base = base.replace("//0.0.0.0", "//127.0.0.1")
+        try:
+            with urllib.request.urlopen(base + spec["list_path"], timeout=2) as r:
+                data = json.loads(r.read().decode())
+            models = sorted({m for m in spec["parse"](data) if m})
+            if models:
+                found[name] = {"kind": "local", "base": base, "models": models}
+                log(f"found {name} at {base} serving {len(models)} local "
+                    f"model(s): {', '.join(models[:5])}"
+                    f"{' …' if len(models) > 5 else ''}")
+        except Exception:
+            pass
+    return found
 
 
 def log(msg: str) -> None:
@@ -93,6 +139,7 @@ def detect_runners(requested: list[str] | None) -> dict[str, dict]:
     for name, spec in API_RUNNERS.items():
         if os.environ.get(spec["env"]):
             found[name] = dict(spec, kind="api")
+    found.update(detect_local_servers())
     if requested:
         if "echo" in requested:
             found["echo"] = {"kind": "echo", "models": ["*"]}
@@ -157,7 +204,7 @@ def run_anthropic(job: dict) -> dict:
             "tokens_out": usage.get("output_tokens")}
 
 
-def run_openai(job: dict) -> dict:
+def run_openai_compatible(job: dict, url: str, key_env: str | None) -> dict:
     body = {
         "model": job["model"],
         "messages": [{"role": "user", "content": job["prompt"]}],
@@ -166,12 +213,10 @@ def run_openai(job: dict) -> dict:
         body["temperature"] = job["temperature"]
     if job.get("max_tokens"):
         body["max_tokens"] = job["max_tokens"]
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=json.dumps(body).encode(), method="POST",
-    )
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST")
     req.add_header("Content-Type", "application/json")
-    req.add_header("Authorization", f"Bearer {os.environ['OPENAI_API_KEY']}")
+    if key_env:
+        req.add_header("Authorization", f"Bearer {os.environ[key_env]}")
     with urllib.request.urlopen(req, timeout=180) as resp:
         r = json.loads(resp.read().decode())
     usage = r.get("usage", {})
@@ -188,8 +233,18 @@ def execute(runners: dict, job: dict) -> dict:
     log(f"  running job #{job['id']} with {name} (model {job['model']}) ...")
     if spec["kind"] == "echo":
         result = {"output": f"[echo runner] You said:\n\n{job['prompt']}"}
+    elif spec["kind"] == "local":
+        result = run_openai_compatible(
+            job, spec["base"] + "/v1/chat/completions", None)
     elif spec["kind"] == "api":
-        result = run_anthropic(job) if name == "anthropic-api" else run_openai(job)
+        if name == "anthropic-api":
+            result = run_anthropic(job)
+        elif name == "xai-api":
+            result = run_openai_compatible(
+                job, "https://api.x.ai/v1/chat/completions", "XAI_API_KEY")
+        else:
+            result = run_openai_compatible(
+                job, "https://api.openai.com/v1/chat/completions", "OPENAI_API_KEY")
     else:
         result = run_cli(spec, job)
     result["runner"] = name
@@ -234,12 +289,15 @@ def register(server: str, code: str, name: str, runners: dict,
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--server", help="PromptPool server URL")
+    ap.add_argument("--server", help="SpareCycles server URL")
     ap.add_argument("--code", help="pairing code from your Account page")
     ap.add_argument("--name", default=platform.node() or "node")
     ap.add_argument("--runners", help="comma list to restrict runners (e.g. claude,echo)")
     ap.add_argument("--models", help="comma list of model patterns this node serves")
     ap.add_argument("--once", action="store_true", help="process one job, then exit")
+    ap.add_argument("--recover", action="store_true",
+                    help="lost your account API key? this paired node can mint "
+                         "a fresh one (the old key stops working)")
     args = ap.parse_args()
 
     requested = [r.strip() for r in args.runners.split(",")] if args.runners else None
@@ -261,7 +319,15 @@ def main() -> int:
         ap.error("not registered — run once with --server URL --code XXXX-XXXX")
     server, token = cfg["server"], cfg["node_token"]
 
-    log(f"PromptPool node '{cfg.get('name', args.name)}' → {server}")
+    if args.recover:
+        r = http_json("POST", f"{server}/api/recover/node", {}, token=token)
+        log(f"minted a fresh API key for account @{r['account']} "
+            "(the old key is now invalid):")
+        print(f"\n  {r['api_key']}\n")
+        log("save it now — it will not be shown again.")
+        return 0
+
+    log(f"SpareCycles node '{cfg.get('name', args.name)}' → {server}")
     log(f"runners: {', '.join(runners)}   models: {', '.join(models)}")
     log("keys stay in this machine's environment; only prompts/answers move.")
 

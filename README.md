@@ -1,8 +1,8 @@
-# 🪙 PromptPool
+# ♻️ SpareCycles
 
 **Some devs have tokens and no ideas. Some have ideas and no tokens.**
 
-PromptPool is a marketplace of vibe-coding projects and a pool of donated AI
+SpareCycles is a marketplace of vibe-coding projects and a pool of donated AI
 compute. Project owners get a queue and an OpenAI-compatible endpoint backed
 by volunteers. Donors point their idle AI subscriptions / API keys at projects
 they believe in and get credited as **AI Donors** on the project page —
@@ -31,15 +31,23 @@ pip install -r server/requirements.txt
 uvicorn server.main:app --port 8377
 ```
 
-Open http://localhost:8377 — create an account (you get an API key, shown
-once, stored hashed), create a project (you get an inference key for its
-realtime endpoint), and browse the marketplace.
+Open http://localhost:8377 — create an account (you get an API key **plus
+five one-time recovery codes**, shown once, stored hashed), create a project
+(you get an inference key for its realtime endpoint), and browse the
+marketplace.
+
+**Lost your account key?** Two ways back in, both of which invalidate the old
+key: trade a recovery code on the Account page (`POST /api/recover`), or run
+`python connector/node_connector.py --recover` on any machine with a paired
+node — possession of a paired node proves account ownership.
 
 ## Connect a node (become a donor)
 
-On any machine that has an AI CLI (`claude`, `codex`, `gemini`,
-`cursor-agent`) **or** a metered provider key in the environment
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`):
+On any machine that has an AI CLI (`claude`, `codex`, `gemini`, `grok`,
+`cursor-agent`), a metered provider key in the environment
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`), **or a local model
+server** — Ollama (`:11434`) and LM Studio (`:1234`) are auto-detected and
+your installed models are advertised to the pool by name:
 
 1. Web UI → **Account** → *Generate pairing code*
 2. ```bash
@@ -49,7 +57,7 @@ On any machine that has an AI CLI (`claude`, `codex`, `gemini`,
    opted into, and every completed job credits you on the project page.
 
 The connector is stdlib-only Python — nothing to install. It re-runs with no
-arguments after the first pairing (`~/.promptpool/node.json` holds the node
+arguments after the first pairing (`~/.sparecycles/node.json` holds the node
 token; never your provider keys). A built-in `echo` runner
 (`--runners echo`) lets you test the full loop without spending a token.
 
@@ -60,7 +68,7 @@ inference key:
 
 ```python
 from openai import OpenAI
-client = OpenAI(base_url="http://localhost:8377/v1", api_key="ppi_...")
+client = OpenAI(base_url="http://localhost:8377/v1", api_key="sci_...")
 r = client.chat.completions.create(
     model="default",  # or override the project's model preference
     messages=[{"role": "user", "content": "Plan the refactor of miner.py"}],
