@@ -150,6 +150,27 @@ table.donors th { color: var(--muted); font-size: 0.78rem; text-transform: upper
 .diagram { width: 100%; height: auto; display: block; margin: 1.1rem 0 0.3rem; }
 .diagram text { font-family: inherit; }
 
+button.chip {
+  font-family: inherit; font-size: 0.85rem; cursor: pointer;
+  color: var(--accent); border-color: var(--accent);
+}
+button.chip:hover { background: var(--accent); color: var(--accent-ink); }
+button.chip b { color: inherit; }
+
+dialog.modal {
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 0;
+  background: var(--panel); color: var(--ink);
+  width: min(560px, calc(100% - 2rem)); max-height: 80vh;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+dialog.modal::backdrop { background: rgba(6, 7, 12, 0.62); }
+.modal-head {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.9rem 1.2rem; border-bottom: 1px solid var(--line);
+}
+.modal-head h3 { margin: 0; font-size: 1.05rem; }
+.modal-body { padding: 0.4rem 1.2rem 1.2rem; overflow-y: auto; max-height: 62vh; }
+
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
 .mt { margin-top: 1rem; }

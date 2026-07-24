@@ -2,10 +2,42 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SpareCycles — tokens, meet ideas</title>
-<link rel="stylesheet" href="/static/styles.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>♻️</text></svg>">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SpareCycles — donate your idle AI compute</title>
+<meta name="description" content="Some devs have tokens and no ideas. Some have ideas and no tokens. SpareCycles is a marketplace of vibe-coding projects and a pool of donated AI compute.">
+
+<!-- Icons. SVG for modern browsers, .ico for legacy, PNG for iOS/Android. -->
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<!-- iOS "Add to Home Screen": needs the opaque 180px PNG above, plus these. -->
+<meta name="apple-mobile-web-app-title" content="SpareCycles">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1017" media="(prefers-color-scheme: dark)">
+
+<!-- Link previews. {{BASE}} is rewritten to the absolute origin at request
+     time — scrapers reject relative image URLs. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SpareCycles">
+<meta property="og:title" content="SpareCycles — donate your idle AI compute">
+<meta property="og:description" content="Some devs have tokens and no ideas. Some have ideas and no tokens. A marketplace of vibe-coding projects and a pool of donated AI compute.">
+<meta property="og:url" content="{{BASE}}/">
+<meta property="og:image" content="{{BASE}}/og-image.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="SpareCycles — some devs have tokens and no ideas, some have ideas and no tokens.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SpareCycles — donate your idle AI compute">
+<meta name="twitter:description" content="A marketplace of vibe-coding projects and a pool of donated AI compute. GoFundMe, but the currency is tokens.">
+<meta name="twitter:image" content="{{BASE}}/og-image.png">
+
+<link rel="stylesheet" href="/static/styles.css?v={{V}}">
 </head>
 <body>
 <nav>
@@ -19,6 +51,6 @@
   <a class="navlink" href="#/account" id="nav-account">Account</a>
 </nav>
 <main id="app"><p class="muted">Loading…</p></main>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v={{V}}"></script>
 </body>
 </html>

@@ -298,6 +298,10 @@ def main() -> int:
     ap.add_argument("--recover", action="store_true",
                     help="lost your account API key? this paired node can mint "
                          "a fresh one (the old key stops working)")
+    ap.add_argument("--status", action="store_true",
+                    help="show which runners this machine can serve and what "
+                         "the pool sees, then exit (safe to run while a "
+                         "background connector is polling)")
     args = ap.parse_args()
 
     requested = [r.strip() for r in args.runners.split(",")] if args.runners else None
@@ -318,6 +322,34 @@ def main() -> int:
     if not cfg.get("node_token"):
         ap.error("not registered — run once with --server URL --code XXXX-XXXX")
     server, token = cfg["server"], cfg["node_token"]
+
+    if args.status:
+        print(f"\n  SpareCycles node status — {server}\n")
+        print("  runners detected on this machine:")
+        for rname, spec in sorted(runners.items()):
+            where = spec.get("base") or spec.get("env") or spec.get("bin") or ""
+            print(f"    • {rname:<14} {spec['kind']:<6} {where}")
+            print(f"      {'':<14} models: {', '.join(spec['models'])}")
+        try:
+            r = http_json("GET", f"{server}/api/nodes/me", token=token)
+        except Exception as e:  # noqa: BLE001 — status must never hard-fail
+            print(f"\n  could not reach the pool: {e}\n")
+            return 1
+        n, acct = r["node"], r["account"]
+        print(f"\n  node '{n['name']}' → account @{acct['name']}")
+        print(f"    pool sees: {'ONLINE' if n['online'] else 'offline'}"
+              f" · {n['jobs_done']} job(s) completed")
+        print(f"    advertised models: {', '.join(n['models']) or '—'}")
+        serving = ", ".join(p["name"] for p in r["serving"]) or "nothing yet"
+        print(f"    serving queues for: {serving}")
+        if r["recent_jobs"]:
+            print("\n  recent jobs on this node:")
+            for j in r["recent_jobs"]:
+                label = j["title"] or f"job #{j['id']}"
+                print(f"    [{j['status']:<7}] {label[:44]:<44} "
+                      f"{j['model_used'] or j['model']} via {j['runner'] or '—'}")
+        print()
+        return 0
 
     if args.recover:
         r = http_json("POST", f"{server}/api/recover/node", {}, token=token)

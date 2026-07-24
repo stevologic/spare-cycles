@@ -14,7 +14,8 @@ from fnmatch import fnmatch
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 
 from . import db
@@ -385,6 +386,61 @@ async def me(request: Request):
         }
 
 
+@app.get("/api/accounts/{name}")
+async def public_profile(name: str):
+    """Public profile: what someone has built and what they've carried.
+    Deliberately excludes node names/tokens — only counts are public."""
+    with db.connect() as conn:
+        db.requeue_expired(conn)
+        acct = conn.execute(
+            "SELECT * FROM accounts WHERE name=?", (name.strip().lower(),)
+        ).fetchone()
+        if not acct:
+            raise HTTPException(404, "no such account")
+
+        owned = conn.execute(
+            "SELECT * FROM projects WHERE owner_id=? ORDER BY created_at DESC",
+            (acct["id"],),
+        ).fetchall()
+        supported = conn.execute(
+            """SELECT p.slug, p.name, p.tagline, a.display_name AS owner
+                 FROM supports s
+                 JOIN projects p ON p.id = s.project_id
+                 JOIN accounts a ON a.id = p.owner_id
+                WHERE s.account_id = ? AND p.owner_id != ?
+                ORDER BY s.created_at DESC""",
+            (acct["id"], acct["id"]),
+        ).fetchall()
+        totals = conn.execute(
+            """SELECT COUNT(*) AS jobs,
+                      COALESCE(SUM(j.tokens_in + j.tokens_out), 0) AS tokens,
+                      COUNT(DISTINCT j.project_id) AS projects_helped
+                 FROM jobs j JOIN nodes n ON n.id = j.node_id
+                WHERE n.account_id = ? AND j.status = 'done'""",
+            (acct["id"],),
+        ).fetchone()
+        nodes_online = conn.execute(
+            "SELECT COUNT(*) FROM nodes WHERE account_id=? AND last_seen > ?",
+            (acct["id"], db.now() - NODE_ONLINE_WINDOW),
+        ).fetchone()[0]
+
+        return {
+            "name": acct["name"],
+            "display_name": acct["display_name"],
+            "joined": acct["created_at"],
+            "donated": {
+                "jobs": totals["jobs"],
+                "tokens": totals["tokens"],
+                "projects_helped": totals["projects_helped"],
+            },
+            "nodes_online": nodes_online,
+            "projects": [
+                project_public(p, project_stats(conn, p["id"])) for p in owned
+            ],
+            "supporting": [dict(r) for r in supported],
+        }
+
+
 @app.get("/api/stats")
 async def stats():
     with db.connect() as conn:
@@ -504,6 +560,49 @@ async def project_jobs(slug: str, limit: int = 25):
             (p["id"], min(max(limit, 1), 100)),
         ).fetchall()
         return {"jobs": [job_public(r, r["donor"]) for r in rows]}
+
+
+@app.get("/api/projects/{slug}/supporters")
+async def project_supporters(slug: str):
+    """Everyone who opted their nodes into this project's queue — which is a
+    superset of the donor leaderboard (a supporter may not have completed a
+    job yet)."""
+    with db.connect() as conn:
+        p = conn.execute("SELECT * FROM projects WHERE slug=?", (slug,)).fetchone()
+        if not p:
+            raise HTTPException(404, "no such project")
+        rows = conn.execute(
+            """SELECT a.id, a.name, a.display_name, s.created_at,
+                      (SELECT COUNT(*) FROM nodes n
+                        WHERE n.account_id = a.id AND n.last_seen > :online)
+                        AS nodes_online,
+                      (SELECT COUNT(*) FROM jobs j JOIN nodes n2 ON n2.id = j.node_id
+                        WHERE n2.account_id = a.id AND j.project_id = :pid
+                          AND j.status = 'done') AS jobs,
+                      (SELECT COALESCE(SUM(j.tokens_in + j.tokens_out), 0)
+                         FROM jobs j JOIN nodes n3 ON n3.id = j.node_id
+                        WHERE n3.account_id = a.id AND j.project_id = :pid
+                          AND j.status = 'done') AS tokens
+               FROM supports s JOIN accounts a ON a.id = s.account_id
+               WHERE s.project_id = :pid
+               ORDER BY tokens DESC, s.created_at ASC""",
+            {"pid": p["id"], "online": db.now() - NODE_ONLINE_WINDOW},
+        ).fetchall()
+        return {
+            "project": p["slug"],
+            "supporters": [
+                {
+                    "name": r["name"],
+                    "display_name": r["display_name"],
+                    "since": r["created_at"],
+                    "nodes_online": r["nodes_online"],
+                    "jobs": r["jobs"],
+                    "tokens": r["tokens"],
+                    "is_maintainer": r["id"] == p["owner_id"],
+                }
+                for r in rows
+            ],
+        }
 
 
 @app.post("/api/projects/{slug}/support")
@@ -630,6 +729,47 @@ async def register_node(request: Request):
             "node_id": cur.lastrowid,
             "node_token": token,
             "account": acct["name"],
+        }
+
+
+@app.get("/api/nodes/me")
+async def node_me(request: Request):
+    """What this node looks like from the pool's side — used by
+    `node_connector.py --status` to report on a backgrounded runner."""
+    with db.connect() as conn:
+        node = require_node(conn, request)
+        acct = conn.execute(
+            "SELECT name, display_name FROM accounts WHERE id=?",
+            (node["account_id"],),
+        ).fetchone()
+        serving = conn.execute(
+            """SELECT p.slug, p.name FROM supports s
+                 JOIN projects p ON p.id = s.project_id
+                WHERE s.account_id = ? ORDER BY p.name""",
+            (node["account_id"],),
+        ).fetchall()
+        recent = conn.execute(
+            """SELECT j.id, j.status, j.title, j.model, j.model_used, j.runner,
+                      j.finished_at, p.slug
+                 FROM jobs j JOIN projects p ON p.id = j.project_id
+                WHERE j.node_id = ? ORDER BY j.id DESC LIMIT 5""",
+            (node["id"],),
+        ).fetchall()
+        t = db.now()
+        return {
+            "node": {
+                "name": node["name"],
+                "runners": json.loads(node["runners"]),
+                "models": json.loads(node["models"]),
+                "jobs_done": node["jobs_done"],
+                "last_seen": node["last_seen"],
+                "online": bool(node["last_seen"]
+                               and t - node["last_seen"] < NODE_ONLINE_WINDOW),
+            },
+            "account": {"name": acct["name"],
+                        "display_name": acct["display_name"]},
+            "serving": [dict(r) for r in serving],
+            "recent_jobs": [dict(r) for r in recent],
         }
 
 
@@ -971,7 +1111,66 @@ async def chat_completions(request: Request):
 
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
+# Browsers, iOS and link crawlers all probe the site root for these regardless
+# of what the HTML declares, so serve them from / as well as /static.
+ROOT_ASSETS = {
+    "favicon.ico": ("favicon.ico", "image/x-icon"),
+    "favicon.svg": ("favicon.svg", "image/svg+xml"),
+    "apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    # Pre-iOS-8 devices ask for the -precomposed name first.
+    "apple-touch-icon-precomposed.png": ("apple-touch-icon.png", "image/png"),
+    "icon-192.png": ("icon-192.png", "image/png"),
+    "icon-512.png": ("icon-512.png", "image/png"),
+    "og-image.png": ("og-image.png", "image/png"),
+    "site.webmanifest": ("site.webmanifest", "application/manifest+json"),
+}
 
-@app.get("/")
-async def index():
-    return FileResponse(os.path.join(WEB_DIR, "index.html"))
+
+def _serve_asset(filename: str, media_type: str):
+    async def handler():
+        return FileResponse(
+            os.path.join(WEB_DIR, filename), media_type=media_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    return handler
+
+
+for _route, (_file, _mime) in ROOT_ASSETS.items():
+    # HEAD too: link scrapers and uptime checks probe assets that way.
+    app.add_api_route(f"/{_route}", _serve_asset(_file, _mime),
+                      methods=["GET", "HEAD"], include_in_schema=False)
+
+
+def public_base(request: Request) -> str:
+    """Absolute origin for og:/twitter: tags — relative image URLs are ignored
+    by every major link scraper. Set SPARECYCLES_PUBLIC_URL when the public
+    hostname differs from what reaches the app (CDN, tunnel, odd proxy)."""
+    configured = os.environ.get("SPARECYCLES_PUBLIC_URL")
+    if configured:
+        return configured.rstrip("/")
+    fwd = request.headers.get("x-forwarded-proto", "")
+    scheme = fwd.split(",")[0].strip() or request.url.scheme
+    host = (request.headers.get("x-forwarded-host")
+            or request.headers.get("host") or request.url.netloc)
+    return f"{scheme}://{host}"
+
+
+def asset_version() -> str:
+    """Cache-buster derived from the front-end files' mtimes, so a deploy can
+    never leave a returning visitor running stale JS against a new API."""
+    stamp = 0.0
+    for name in ("app.js", "styles.css"):
+        try:
+            stamp = max(stamp, os.path.getmtime(os.path.join(WEB_DIR, name)))
+        except OSError:
+            pass
+    return f"{int(stamp):x}"
+
+
+@app.api_route("/", methods=["GET", "HEAD"])
+async def index(request: Request):
+    with open(os.path.join(WEB_DIR, "index.html"), encoding="utf-8") as f:
+        html = f.read()
+    html = (html.replace("{{BASE}}", public_base(request))
+                .replace("{{V}}", asset_version()))
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})

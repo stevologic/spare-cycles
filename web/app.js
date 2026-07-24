@@ -27,6 +27,10 @@ const fmtN = (n) => {
   if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
   return String(n);
 };
+const fmtDate = (t) => t
+  ? new Date(t * 1000).toLocaleDateString(undefined,
+      { year: "numeric", month: "short", day: "numeric" })
+  : "—";
 const ago = (t) => {
   if (!t) return "";
   const s = Math.max(1, Math.floor(Date.now() / 1000 - t));
@@ -111,7 +115,8 @@ async function viewProject(slug) {
     ? `<table class="donors"><tr><th></th><th>AI Donor</th><th>Jobs</th><th>Tokens</th></tr>
        ${p.donors.map((d, i) => `<tr>
           <td>${["🥇", "🥈", "🥉"][i] || i + 1}</td>
-          <td>${esc(d.display_name)} ${d.is_maintainer ? '<span class="badge owner">maintainer</span>' : ""}</td>
+          <td><a href="#/u/${esc(d.name)}">${esc(d.display_name)}</a>
+              ${d.is_maintainer ? '<span class="badge owner">maintainer</span>' : ""}</td>
           <td>${fmtN(d.jobs)}</td><td>${fmtN(d.tokens)}</td></tr>`).join("")}
        </table>`
     : `<p class="muted small">No completed donations yet. Be the first AI Donor.</p>`;
@@ -120,7 +125,7 @@ async function viewProject(slug) {
     <div class="panel projhead">
       <h2 class="pagetitle">${esc(p.name)}</h2>
       <div class="row">
-        <span class="muted">by ${esc(p.owner)}</span>
+        <span class="muted">by <a href="#/u/${esc(p.owner_name)}">${esc(p.owner)}</a></span>
         ${p.repo_url ? `<a href="${esc(p.repo_url)}" target="_blank" rel="noopener">↗ repository</a>` : ""}
         <span class="grow"></span>
         ${me && !isOwner ? `<button class="btn small ${supporting ? "ghost" : ""}" id="btn-support">
@@ -132,7 +137,9 @@ async function viewProject(slug) {
       <div class="statrow" style="justify-content:flex-start">
         <span class="chip"><b>${fmtN(p.jobs_done)}</b> jobs done</span>
         <span class="chip"><b>${fmtN(p.tokens_donated)}</b> tokens donated</span>
-        <span class="chip"><b>${p.supporters}</b> supporters</span>
+        <button class="chip" id="chip-supporters" title="See who supports this project">
+          <b>${p.supporters}</b> ${p.supporters === 1 ? "supporter" : "supporters"} →
+        </button>
         <span class="chip">model <b>${esc(p.model)}</b>${p.fallback_model ? ` → <b>${esc(p.fallback_model)}</b>` : ""}</span>
         ${p.temperature != null ? `<span class="chip">temp <b>${p.temperature}</b></span>` : ""}
         ${p.max_tokens ? `<span class="chip">max <b>${fmtN(p.max_tokens)}</b> tok</span>` : ""}
@@ -169,7 +176,58 @@ async function viewProject(slug) {
       <h2>Job feed <span class="muted small">(public, refreshes live)</span></h2>
       <div class="joblist" id="joblist">${jobs.jobs.map(jobDetails).join("") || `<p class="muted small">Nothing queued yet.</p>`}</div>
     </div>
+
+    <dialog class="modal" id="dlg-supporters">
+      <div class="modal-head">
+        <h3>🤝 Supporters of ${esc(p.name)}</h3>
+        <span class="grow"></span>
+        <button class="btn small ghost" id="dlg-close">Close</button>
+      </div>
+      <div class="modal-body" id="dlg-body"><p class="muted small">Loading…</p></div>
+    </dialog>
   `);
+
+  const dlg = document.getElementById("dlg-supporters");
+  document.getElementById("dlg-close").addEventListener("click", () => dlg.close());
+  // Close on backdrop click. `e.target === dlg` alone isn't enough: the very
+  // click that opened the modal gets retargeted to the dialog if the trigger
+  // sits under the modal's box, which would slam it shut instantly. Only
+  // treat it as a backdrop hit when the pointer is outside the dialog itself.
+  dlg.addEventListener("click", (e) => {
+    if (e.target !== dlg) return;
+    const r = dlg.getBoundingClientRect();
+    const outside = e.clientX < r.left || e.clientX > r.right
+                 || e.clientY < r.top || e.clientY > r.bottom;
+    if (outside) dlg.close();
+  });
+  document.getElementById("chip-supporters").addEventListener("click", async () => {
+    const body = document.getElementById("dlg-body");
+    body.innerHTML = `<p class="muted small">Loading…</p>`;
+    dlg.showModal();
+    try {
+      const r = await api(`/api/projects/${slug}/supporters`);
+      body.innerHTML = r.supporters.length ? `
+        <table class="donors">
+          <tr><th>Supporter</th><th>Nodes</th><th>Jobs</th><th>Tokens</th></tr>
+          ${r.supporters.map((s) => `<tr>
+            <td><a href="#/u/${esc(s.name)}">${esc(s.display_name)}</a>
+              <a class="muted small" href="#/u/${esc(s.name)}">@${esc(s.name)}</a>
+              ${s.is_maintainer ? '<span class="badge owner">maintainer</span>' : ""}
+              <br><span class="muted small">supporting since ${fmtDate(s.since)}</span></td>
+            <td>${s.nodes_online
+              ? `<span class="dot on"></span>${s.nodes_online} online`
+              : `<span class="dot off"></span><span class="muted">offline</span>`}</td>
+            <td>${fmtN(s.jobs)}</td>
+            <td>${fmtN(s.tokens)}</td>
+          </tr>`).join("")}
+        </table>
+        <p class="muted small mt">Supporters volunteer their nodes for this project's queue.
+        Anyone with jobs above is also an AI Donor on the leaderboard.</p>`
+        : `<p class="muted small">No supporters yet — be the first to point a node at this project.</p>`;
+    } catch (e) {
+      body.innerHTML = `<p class="error">${esc(e.message)}</p>`;
+    }
+  });
 
   document.getElementById("btn-support")?.addEventListener("click", async () => {
     try {
@@ -209,6 +267,66 @@ async function refreshJobs(slug) {
       });
     }
   } catch { /* transient */ }
+}
+
+// ------------------------------------------------------------------ profile
+
+function projectCard(p, extra = "") {
+  return `
+    <a class="card" href="#/p/${esc(p.slug)}" style="color:inherit;text-decoration:none">
+      <h3>${esc(p.name)}</h3>
+      <div class="tagline">${esc(p.tagline || (p.description || "").slice(0, 120)
+        || "A vibe-coding project looking for AI donors.")}</div>
+      <div class="meta">${extra}</div>
+    </a>`;
+}
+
+async function viewProfile(name) {
+  render(`<p class="muted">Loading profile…</p>`);
+  const u = await api(`/api/accounts/${encodeURIComponent(name)}`);
+  const apps = u.projects.map((p) => projectCard(p, `
+    <span><b>${fmtN(p.jobs_done)}</b> jobs done</span>
+    <span><b>${fmtN(p.tokens_donated)}</b> tokens donated</span>
+    <span><b>${p.supporters}</b> ${p.supporters === 1 ? "supporter" : "supporters"}</span>
+    ${p.jobs_open ? `<span class="badge queued">${p.jobs_open} open</span>` : ""}`)).join("");
+
+  render(`
+    <div class="panel">
+      <div class="row">
+        <h2 class="pagetitle">${esc(u.display_name)}</h2>
+        <span class="muted">@${esc(u.name)}</span>
+        ${u.nodes_online
+          ? `<span class="chip"><span class="dot on"></span>${u.nodes_online} node${u.nodes_online === 1 ? "" : "s"} online</span>`
+          : `<span class="chip"><span class="dot off"></span>no nodes online</span>`}
+      </div>
+      <p class="muted small">Joined ${fmtDate(u.joined)}</p>
+      <div class="statrow" style="justify-content:flex-start">
+        <span class="chip"><b>${fmtN(u.donated.jobs)}</b> jobs donated</span>
+        <span class="chip"><b>${fmtN(u.donated.tokens)}</b> tokens donated</span>
+        <span class="chip"><b>${u.donated.projects_helped}</b> ${u.donated.projects_helped === 1 ? "project" : "projects"} helped</span>
+        <span class="chip"><b>${u.projects.length}</b> ${u.projects.length === 1 ? "app" : "apps"} submitted</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>📦 Apps by ${esc(u.display_name)}</h2>
+      ${apps
+        ? `<div class="grid">${apps}</div>`
+        : `<p class="muted small">No projects submitted yet.</p>`}
+    </div>
+
+    <div class="panel">
+      <h2>🤝 Supporting</h2>
+      ${u.supporting.length
+        ? u.supporting.map((s) => `<div class="row mt">
+            <a href="#/p/${esc(s.slug)}">${esc(s.name)}</a>
+            <span class="muted small">${esc(s.tagline || "by " + s.owner)}</span>
+          </div>`).join("")
+        : `<p class="muted small">Not supporting any other projects yet.</p>`}
+      <p class="muted small mt">Supporting means volunteering their nodes to process
+      another project's queue with their own tokens.</p>
+    </div>
+  `);
 }
 
 // ------------------------------------------------------------------ new project
@@ -402,6 +520,7 @@ async function viewAccount() {
     <div class="panel">
       <div class="row"><h2 class="pagetitle">@${esc(me.account.name)}</h2>
         <span class="muted">${esc(me.account.display_name)}</span>
+        <a class="small" href="#/u/${esc(me.account.name)}">view public profile →</a>
         <span class="grow"></span>
         <button class="btn small ghost" id="btn-logout">Sign out</button></div>
       <div class="row mt">
@@ -653,7 +772,38 @@ function viewConnect() {
       <p class="small muted">It auto-detects available runners, registers the node under your
       account, saves its node token in <code class="inline">~/.sparecycles/</code>, and starts
       polling for work from projects you support.</p>
-      <h3>3. Support projects</h3>
+      <h3>3. Run it in the background — and check on it</h3>
+      <p class="small muted">Once it is polling you'll want it out of the way. Start it
+      detached, then use <code class="inline">--status</code> at any time to see which
+      runners this machine can serve, what the pool thinks your node is doing, and its
+      last few jobs. It is read-only, so it is safe to run while the background
+      connector keeps polling.</p>
+      <pre class="code"># see the runners this machine serves + live pool status
+python connector/node_connector.py --status
+
+# ── run detached ──────────────────────────────────────────────
+# macOS / Linux
+nohup python connector/node_connector.py > ~/.sparecycles/node.log 2>&1 &
+
+# Windows PowerShell
+Start-Process -WindowStyle Hidden python -ArgumentList "connector/node_connector.py"
+
+# ── watch what it is doing ────────────────────────────────────
+tail -f ~/.sparecycles/node.log                  # macOS / Linux
+Get-Content "$env:USERPROFILE\.sparecycles\node.log" -Wait   # Windows
+
+# ── is it still running? ──────────────────────────────────────
+pgrep -af node_connector.py                      # macOS / Linux
+Get-Process python | Where-Object Path           # Windows
+
+# ── stop it ───────────────────────────────────────────────────
+pkill -f node_connector.py                       # macOS / Linux
+Stop-Process -Name python                        # Windows (careful!)</pre>
+      <p class="small muted">Prefer it always-on? Drop the same command into a systemd unit
+      (<code class="inline">Restart=always</code>), a launchd plist, or Task Scheduler —
+      the connector reconnects on its own after a network blip or a server restart.</p>
+
+      <h3>4. Support projects</h3>
       <p class="small muted">Browse the <a href="#/">marketplace</a> and hit <i>Support</i>.
       Your node only ever serves projects you explicitly chose. Every completed job lists you
       as an <b>AI Donor</b> on the project page.</p>
@@ -693,6 +843,9 @@ print(r.choices[0].message.content)</pre>
       <pre class="code">POST /api/register                 create account → account key (once)
 GET  /api/projects                 marketplace
 GET  /api/projects/&lt;slug&gt;          project + donors
+GET  /api/projects/&lt;slug&gt;/supporters  who volunteers for this queue
+GET  /api/accounts/&lt;name&gt;          public profile: apps + donations
+GET  /api/nodes/me                 (node token) node self-status
 POST /api/projects/&lt;slug&gt;/support  become a donor
 POST /api/pair                     pairing code for a new node
 POST /api/recover                  {name, recovery_code} → fresh account key
@@ -713,6 +866,7 @@ async function route() {
   try {
     if (h === "#/" || h === "") await viewHome();
     else if (h.startsWith("#/p/")) await viewProject(h.slice(4));
+    else if (h.startsWith("#/u/")) await viewProfile(decodeURIComponent(h.slice(4)));
     else if (h === "#/new") await viewNew();
     else if (h === "#/account") await viewAccount();
     else if (h === "#/how") viewHow();

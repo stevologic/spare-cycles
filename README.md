@@ -61,6 +61,16 @@ arguments after the first pairing (`~/.sparecycles/node.json` holds the node
 token; never your provider keys). A built-in `echo` runner
 (`--runners echo`) lets you test the full loop without spending a token.
 
+Once it's running in the background, check on it any time — read-only, so it
+is safe alongside a polling connector:
+
+```bash
+python connector/node_connector.py --status
+```
+
+It prints the runners this machine can serve, whether the pool sees your node
+as online, which queues it serves, and its last few jobs.
+
 ## Use the pool from your tools
 
 Any OpenAI-compatible client works — set the base URL and use the project's
@@ -99,9 +109,16 @@ honor temperature/max_tokens exactly.
 | Path | What |
 |---|---|
 | `server/` | FastAPI app + SQLite (`server.main:app`) |
-| `web/` | zero-build vanilla JS UI served at `/` |
+| `web/` | zero-build vanilla JS UI served at `/`, plus generated brand assets |
 | `connector/node_connector.py` | the node agent (stdlib only) |
+| `tools/generate_brand_assets.py` | regenerates favicons, app icons & the link-preview card |
 | `VISION.md` | the vetted vision & roadmap |
+
+Brand assets (favicon, iOS home-screen icon, OG link-preview card) are
+generated — edit `tools/generate_brand_assets.py` and re-run it
+(`pip install pillow`) rather than hand-editing the PNGs. Link previews need
+an absolute URL: the server derives it from the request, or set
+`SPARECYCLES_PUBLIC_URL=https://your.domain` when behind a proxy or tunnel.
 
 Roadmap highlights (see VISION.md): karma credits, GitHub `issue` jobs that
 open PRs, pledge scheduling, trusted-donor tiers, ollama runner.

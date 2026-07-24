@@ -1,0 +1,17 @@
+{
+  "name": "SpareCycles",
+  "short_name": "SpareCycles",
+  "description": "A marketplace of vibe-coding projects and a pool of donated AI compute.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f1017",
+  "theme_color": "#0f1017",
+  "icons": [
+    { "src": "/static/favicon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/static/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/static/icon-512.png", "type": "image/png", "sizes": "512x512" },
+    { "src": "/static/maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
+}
