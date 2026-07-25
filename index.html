@@ -140,12 +140,29 @@ pre .s { color: #7dd3a8; }
 .finale h2 { font-size: 2rem; }
 
 footer {
-  border-top: 1px solid var(--line); padding: 1.6rem 0 2.4rem;
+  border-top: 1px solid var(--line); padding: 1.8rem 0 2.4rem;
   color: var(--muted); font-size: .86rem;
-  display: flex; gap: .8rem 1.6rem; justify-content: center; flex-wrap: wrap;
+  display: flex; flex-direction: column; align-items: center; gap: 1.1rem;
 }
+footer .links { display: flex; gap: .8rem 1.6rem; justify-content: center; flex-wrap: wrap; }
 footer a { color: var(--muted); }
 footer a:hover { color: var(--accent); }
+.donate {
+  display: flex; gap: .5rem 1.3rem; justify-content: center; align-items: center;
+  flex-wrap: wrap; font-size: .84rem;
+}
+.donate .addr {
+  display: inline-flex; align-items: center; gap: .45rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+  padding: .35rem .7rem;
+}
+.donate .addr b { color: var(--ink); font-size: .78rem; }
+.donate .addr code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: .76rem; color: var(--accent); word-break: break-all;
+  user-select: all;
+}
+.donate .note { width: 100%; text-align: center; font-size: .78rem; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -339,11 +356,22 @@ python node_connector.py --status
 
 </div>
 <footer>
-  <span>♻️ SpareCycles</span>
-  <a href="https://github.com/stevologic/spare-cycles">GitHub</a>
-  <a href="https://github.com/stevologic/spare-cycles/blob/main/VISION.md">Vision</a>
-  <a href="https://github.com/stevologic/spare-cycles/blob/main/DEPLOY.md">Deploy guide</a>
-  <a href="https://github.com/stevologic/spare-cycles/blob/main/LICENSE">MIT license</a>
+  <div class="donate">
+    <span>☕ Fuel development:</span>
+    <span class="addr"><b>BTC</b>
+      <code>3M9PTxL15b6c8REcHMZCVPbfMomXNZ5AGR</code></span>
+    <span class="addr"><b>DOGE</b>
+      <code>DTW2M5oEW97WbmYJRM71qD7uE6xfJs1MUK</code></span>
+    <span class="note">Tips keep the maintainer caffeinated — the pool itself stays
+    donation-only: no tokens are ever bought or sold.</span>
+  </div>
+  <div class="links">
+    <span>♻️ SpareCycles</span>
+    <a href="https://github.com/stevologic/spare-cycles">GitHub</a>
+    <a href="https://github.com/stevologic/spare-cycles/blob/main/VISION.md">Vision</a>
+    <a href="https://github.com/stevologic/spare-cycles/blob/main/DEPLOY.md">Deploy guide</a>
+    <a href="https://github.com/stevologic/spare-cycles/blob/main/LICENSE">MIT license</a>
+  </div>
 </footer>
 </body>
 </html>
