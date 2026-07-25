@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get started — SpareCycles</title>
+<meta name="description" content="Three simple ways to donate your idle AI compute: your own machine, Docker, or a GitHub Action. Plus how to run your own pool.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0f1017">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SpareCycles">
+<meta property="og:title" content="Get started with SpareCycles">
+<meta property="og:description" content="Donate idle AI compute in two commands — your machine, Docker, or a GitHub Action.">
+<meta property="og:url" content="https://stevologic.github.io/spare-cycles/docs.html">
+<meta property="og:image" content="https://stevologic.github.io/spare-cycles/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://stevologic.github.io/spare-cycles/og-image.png">
+
+<style>
+:root {
+  --bg: #0f1017; --panel: #171922; --ink: #e8eaf2; --muted: #8f94a6;
+  --line: #262a38; --accent: #7b7bf0; --accent-ink: #0f1017; --code-bg: #0a0b10;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.65;
+  background-image: radial-gradient(900px 420px at 20% -10%, rgba(123,123,240,.13), transparent 70%);
+  background-repeat: no-repeat;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 780px; margin: 0 auto; padding: 0 1.3rem 4rem; }
+
+header { display: flex; align-items: center; gap: 1rem; padding: 1.2rem 0 2.2rem; }
+.logo { display: flex; align-items: center; gap: .6rem; font-weight: 800; font-size: 1.05rem; color: var(--ink); }
+.logo svg { width: 26px; height: 26px; }
+.logo b { color: var(--accent); }
+header .spacer { flex: 1; }
+header a.plain { color: var(--muted); font-size: .9rem; }
+
+h1 { font-size: clamp(1.7rem, 4vw, 2.3rem); letter-spacing: -.02em; margin: 0 0 .6rem; }
+.sub { color: var(--muted); margin: 0 0 2rem; }
+
+.pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .8rem; margin-bottom: 3rem; }
+.pick a {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+  padding: 1rem 1.1rem; color: var(--ink);
+}
+.pick a:hover { border-color: var(--accent); text-decoration: none; }
+.pick .t { font-weight: 700; display: block; }
+.pick .d { color: var(--muted); font-size: .84rem; }
+
+section { margin: 0 0 3.4rem; scroll-margin-top: 1.5rem; }
+h2 { font-size: 1.45rem; letter-spacing: -.01em; margin: 0 0 .3rem; }
+.need { color: var(--muted); font-size: .92rem; margin: 0 0 1.4rem; }
+.need b { color: var(--ink); }
+
+.step { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+.step .n {
+  flex: none; width: 30px; height: 30px; border-radius: 9px; margin-top: .15rem;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(123,123,240,.15); color: var(--accent); font-weight: 800; font-size: .95rem;
+}
+.step .body { min-width: 0; flex: 1; }
+.step h3 { margin: 0 0 .35rem; font-size: 1.02rem; }
+.step p { margin: 0 0 .7rem; color: var(--muted); font-size: .92rem; }
+.step p b, .step p code { color: var(--ink); }
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: .85rem 1rem; overflow-x: auto; margin: 0 0 .6rem;
+  font-size: .8rem; line-height: 1.55; color: #d8dbea;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+pre .c { color: #6d7385; }
+code.inline {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 5px;
+  padding: .08rem .35rem; font-size: .84em;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.tip {
+  border-left: 3px solid var(--accent); background: var(--panel);
+  border-radius: 0 10px 10px 0; padding: .7rem 1rem; font-size: .88rem;
+  color: var(--muted); margin: 1rem 0 0;
+}
+.tip b { color: var(--ink); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0 0 3.4rem; }
+footer { border-top: 1px solid var(--line); padding-top: 1.4rem; color: var(--muted); font-size: .86rem; display: flex; gap: 1.4rem; flex-wrap: wrap; }
+footer a { color: var(--muted); }
+footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="logo" href="./" style="text-decoration:none">
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M32 12.6a19.4 19.4 0 1 1-16.8 9.7" fill="none" stroke="#7b7bf0" stroke-width="8"/>
+      <path d="M8.4 24.2 22 20.5l-3.1 13.7z" fill="#7b7bf0"/>
+      <circle cx="32" cy="32" r="9.6" fill="#e8eaf2"/>
+      <circle cx="32" cy="32" r="4" fill="#5b5bd6"/>
+    </svg>
+    <span>Spare<b>Cycles</b></span>
+  </a>
+  <span class="spacer"></span>
+  <a class="plain" href="./">← back to the site</a>
+  <a class="plain" href="https://github.com/stevologic/spare-cycles">GitHub</a>
+</header>
+
+<h1>Get started</h1>
+<p class="sub">Three ways to donate your idle AI compute — pick the one that fits.
+Every path needs a <b style="color:var(--ink)">pairing code</b> from the pool's web UI
+(<b style="color:var(--ink)">Account → Generate pairing code</b>), and your provider keys
+<b style="color:var(--ink)">never leave your machine</b>: only prompts and answers move.</p>
+
+<div class="pick">
+  <a href="#machine"><span class="t">💻 Your machine</span><span class="d">two commands, zero installs</span></a>
+  <a href="#docker"><span class="t">🐳 Docker</span><span class="d">set-and-forget on any box</span></a>
+  <a href="#action"><span class="t">⚙️ GitHub Action</span><span class="d">donate spare CI minutes</span></a>
+</div>
+
+<section id="machine">
+  <h2>💻 Your own machine</h2>
+  <p class="need">You need: <b>Python 3.11+</b> and at least one way to run models —
+  an AI CLI (claude, codex, gemini, grok, cursor-agent), a metered API key, or
+  Ollama / LM Studio running locally.</p>
+
+  <div class="step"><span class="n">1</span><div class="body">
+    <h3>Pair once</h3>
+    <p>Grab the connector from the repo, run it with your pairing code. It remembers
+    the pairing in <code class="inline">~/.sparecycles/node.json</code>.</p>
+<pre>git clone https://github.com/stevologic/spare-cycles.git
+cd spare-cycles
+python connector/node_connector.py --server https://your-pool.example.com --code AB12-CD34</pre>
+  </div></div>
+
+  <div class="step"><span class="n">2</span><div class="body">
+    <h3>Run it</h3>
+    <p>That's the whole job. It auto-detects your CLIs, API keys
+    (<code class="inline">ANTHROPIC_API_KEY</code>, <code class="inline">OPENAI_API_KEY</code>,
+    <code class="inline">XAI_API_KEY</code>) and local Ollama / LM Studio models, and serves
+    only the projects you've chosen to support.</p>
+<pre>python connector/node_connector.py</pre>
+  </div></div>
+
+  <div class="step"><span class="n">3</span><div class="body">
+    <h3>Check on it</h3>
+<pre>python connector/node_connector.py --status
+<span class="c">#  node 'my-laptop' → account @you</span>
+<span class="c">#  pool sees: ONLINE · 41 job(s) completed</span></pre>
+    <p>Want it always-on? <code class="inline">nohup python connector/node_connector.py &amp;</code>
+    or a systemd unit — see the
+    <a href="https://github.com/stevologic/spare-cycles/blob/main/DEPLOY.md">deploy guide</a>.</p>
+  </div></div>
+
+  <div class="tip"><b>Try it without spending a token:</b> add
+  <code class="inline">--runners echo</code> — a built-in test runner that just echoes
+  prompts back, so you can watch the full loop work.</div>
+</section>
+
+<section id="docker">
+  <h2>🐳 Docker</h2>
+  <p class="need">You need: <b>Docker</b>. The image is
+  <code class="inline">ghcr.io/stevologic/spare-cycles</code> (amd64 + arm64 — a
+  Raspberry Pi counts).</p>
+
+  <div class="step"><span class="n">1</span><div class="body">
+    <h3>Pair once</h3>
+    <p>The node identity is saved into the <code class="inline">sparecycles</code> volume,
+    so you only do this the first time.</p>
+<pre>docker run -it -v sparecycles:/data ghcr.io/stevologic/spare-cycles \
+  --server https://your-pool.example.com --code AB12-CD34</pre>
+  </div></div>
+
+  <div class="step"><span class="n">2</span><div class="body">
+    <h3>Serve forever</h3>
+    <p>Pass whichever provider keys you donate with — they stay inside the container
+    on your machine.</p>
+<pre>docker run -d --name sparecycles-node --restart unless-stopped \
+  -v sparecycles:/data \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  ghcr.io/stevologic/spare-cycles</pre>
+  </div></div>
+
+  <div class="step"><span class="n">3</span><div class="body">
+    <h3>Watch it work</h3>
+<pre>docker logs -f sparecycles-node
+docker run --rm -v sparecycles:/data ghcr.io/stevologic/spare-cycles --status</pre>
+  </div></div>
+
+  <div class="tip"><b>Donating a local Ollama?</b> Let the container reach it on the host:<br>
+  <code class="inline">--add-host=host.docker.internal:host-gateway
+  -e OLLAMA_HOST=http://host.docker.internal:11434</code></div>
+</section>
+
+<section id="action">
+  <h2>⚙️ GitHub Action — donate your CI minutes</h2>
+  <p class="need">You need: a GitHub repo. A scheduled workflow checks in, serves the
+  queue for N minutes, and leaves — quitting early if there's no work.</p>
+
+  <div class="step"><span class="n">1</span><div class="body">
+    <h3>Get a node token</h3>
+    <p>Pair once on any machine (step 1 of either method above), then copy
+    <code class="inline">node_token</code> (<code class="inline">scn_…</code>) out of
+    <code class="inline">~/.sparecycles/node.json</code>.</p>
+  </div></div>
+
+  <div class="step"><span class="n">2</span><div class="body">
+    <h3>Add repo secrets</h3>
+    <p>Repo → Settings → Secrets and variables → Actions:
+    <code class="inline">SPARECYCLES_NODE_TOKEN</code> plus the provider keys you donate
+    with (<code class="inline">ANTHROPIC_API_KEY</code>,
+    <code class="inline">OPENAI_API_KEY</code>, <code class="inline">XAI_API_KEY</code> —
+    any subset).</p>
+  </div></div>
+
+  <div class="step"><span class="n">3</span><div class="body">
+    <h3>Add the workflow</h3>
+    <p>Save as <code class="inline">.github/workflows/donate.yml</code>
+    (full example <a href="https://github.com/stevologic/spare-cycles/blob/main/examples/donate.yml">here</a>):</p>
+<pre>name: SpareCycles donor check-in
+on:
+  schedule: [{ cron: "17 3 * * *" }]   <span class="c"># nightly</span>
+  workflow_dispatch: {}
+jobs:
+  donate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: stevologic/spare-cycles@main
+        with:
+          server: https://your-pool.example.com
+          node-token: ${{ secrets.SPARECYCLES_NODE_TOKEN }}
+          models: "claude*,gpt*"
+          minutes: 20
+          idle-exit: 120
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}</pre>
+  </div></div>
+
+  <div class="tip"><b>Note:</b> CI runners have no AI CLIs installed, so Action donations
+  flow through the direct API runners — metered keys, the ToS-clean way to give.</div>
+</section>
+
+<hr>
+
+<section id="pool">
+  <h2>🏊 Run your own pool</h2>
+  <p class="need">The whole coordinator is <b>one Python process + one SQLite file</b>.
+  It never runs inference, so a $6 VPS — or your desktop behind a tunnel — is plenty.</p>
+<pre>git clone https://github.com/stevologic/spare-cycles.git
+cd spare-cycles
+pip install -r server/requirements.txt
+uvicorn server.main:app --port 8377</pre>
+  <p class="need">Open <code class="inline">http://localhost:8377</code> — create an account,
+  add your project, generate pairing codes. For HTTPS, systemd, backups and monitoring, follow the
+  <a href="https://github.com/stevologic/spare-cycles/blob/main/DEPLOY.md">deploy guide</a>.</p>
+</section>
+
+<footer>
+  <span>♻️ SpareCycles</span>
+  <a href="./">Home</a>
+  <a href="https://github.com/stevologic/spare-cycles">GitHub</a>
+  <a href="https://github.com/stevologic/spare-cycles/blob/main/DEPLOY.md">Deploy guide</a>
+  <a href="https://github.com/stevologic/spare-cycles/blob/main/LICENSE">MIT license</a>
+</footer>
+
+</div>
+</body>
+</html>
