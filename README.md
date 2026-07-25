@@ -3,6 +3,8 @@
 ![CI](https://github.com/stevologic/spare-cycles/actions/workflows/ci.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/license-MIT-5b5bd6.svg)
 
+**Website: [stevologic.github.io/spare-cycles](https://stevologic.github.io/spare-cycles/)**
+
 **Some devs have tokens and no ideas. Some have ideas and no tokens.**
 
 SpareCycles is a marketplace of vibe-coding projects and a pool of donated AI
