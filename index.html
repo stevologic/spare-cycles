@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpareCycles — donate your idle AI compute</title>
+<meta name="description" content="Some devs have tokens and no ideas. Some have ideas and no tokens. SpareCycles is a marketplace of vibe-coding projects and a pool of donated AI compute.">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0f1017">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SpareCycles">
+<meta property="og:title" content="SpareCycles — donate your idle AI compute">
+<meta property="og:description" content="A marketplace of vibe-coding projects and a pool of donated AI compute. GoFundMe, but the currency is tokens. Open source, MIT.">
+<meta property="og:url" content="https://stevologic.github.io/spare-cycles/">
+<meta property="og:image" content="https://stevologic.github.io/spare-cycles/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SpareCycles — donate your idle AI compute">
+<meta name="twitter:description" content="A marketplace of vibe-coding projects and a pool of donated AI compute. Open source, MIT.">
+<meta name="twitter:image" content="https://stevologic.github.io/spare-cycles/og-image.png">
+
+<style>
+:root {
+  --bg: #0f1017; --panel: #171922; --panel2: #1c1e2b;
+  --ink: #e8eaf2; --muted: #8f94a6; --line: #262a38;
+  --accent: #7b7bf0; --accent-deep: #5b5bd6; --accent-ink: #0f1017;
+  --good: #4ade80; --code-bg: #0a0b10;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  background-image:
+    radial-gradient(1000px 520px at 15% -10%, rgba(123,123,240,.16), transparent 70%),
+    radial-gradient(800px 500px at 110% 12%, rgba(91,91,214,.10), transparent 70%);
+  background-repeat: no-repeat;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1060px; margin: 0 auto; padding: 0 1.3rem; }
+
+header { display: flex; align-items: center; gap: 1rem; padding: 1.2rem 0; }
+.logo { display: flex; align-items: center; gap: .6rem; font-weight: 800; font-size: 1.12rem; color: var(--ink); }
+.logo svg { width: 30px; height: 30px; }
+.logo b { color: var(--accent); font-weight: 800; }
+header .spacer { flex: 1; }
+.ghbtn {
+  border: 1px solid var(--line); border-radius: 9px; padding: .45rem 1rem;
+  color: var(--ink); font-size: .9rem; font-weight: 600; background: var(--panel);
+}
+.ghbtn:hover { border-color: var(--accent); text-decoration: none; }
+
+.hero { text-align: center; padding: 4.2rem 0 3rem; }
+.eyebrow {
+  display: inline-block; font-size: .78rem; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--accent);
+  border: 1px solid rgba(123,123,240,.35); border-radius: 999px;
+  padding: .3rem 1rem; margin-bottom: 1.4rem; background: rgba(123,123,240,.08);
+}
+h1 {
+  font-size: clamp(1.9rem, 4.6vw, 3.1rem); line-height: 1.16;
+  letter-spacing: -.02em; margin: 0 0 1.1rem;
+}
+h1 .a { color: var(--accent); }
+.sub { color: var(--muted); font-size: clamp(1rem, 2vw, 1.2rem); max-width: 42rem; margin: 0 auto 2rem; }
+.ctas { display: flex; gap: .9rem; justify-content: center; flex-wrap: wrap; }
+.btn {
+  display: inline-block; padding: .75rem 1.6rem; border-radius: 11px;
+  font-weight: 700; font-size: 1rem;
+}
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { background: #8f8ff5; text-decoration: none; }
+.btn.ghost { border: 1px solid var(--line); color: var(--ink); background: var(--panel); }
+.btn.ghost:hover { border-color: var(--accent); text-decoration: none; }
+.factline { margin-top: 2.4rem; color: var(--muted); font-size: .88rem; display: flex; gap: .6rem 1.6rem; justify-content: center; flex-wrap: wrap; }
+.factline b { color: var(--ink); }
+
+section { padding: 3.2rem 0; }
+h2 { font-size: 1.7rem; letter-spacing: -.01em; margin: 0 0 .5rem; text-align: center; }
+.lead { color: var(--muted); text-align: center; max-width: 40rem; margin: 0 auto 2.4rem; }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.1rem; }
+.step {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 1.5rem 1.5rem 1.3rem; position: relative;
+}
+.step .n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 10px; margin-bottom: .9rem;
+  background: rgba(123,123,240,.14); color: var(--accent); font-weight: 800;
+}
+.step h3 { margin: 0 0 .4rem; font-size: 1.08rem; }
+.step p { margin: 0; color: var(--muted); font-size: .93rem; }
+
+.diagram-panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+  padding: 1.6rem; overflow-x: auto;
+}
+.diagram-panel svg { width: 100%; height: auto; display: block; min-width: 640px; }
+
+.codegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.1rem; }
+.codecard { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 1.3rem 1.4rem; }
+.codecard h3 { margin: 0 0 .3rem; font-size: 1.05rem; }
+.codecard p { color: var(--muted); font-size: .9rem; margin: 0 0 .9rem; }
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 11px;
+  padding: 1rem 1.1rem; overflow-x: auto; margin: 0;
+  font-size: .82rem; line-height: 1.55; color: #d8dbea;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+pre .c { color: #6d7385; }
+pre .k { color: #8f8ff5; }
+pre .s { color: #7dd3a8; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.feature {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 15px;
+  padding: 1.25rem 1.3rem;
+}
+.feature .e { font-size: 1.5rem; display: block; margin-bottom: .5rem; }
+.feature h3 { margin: 0 0 .3rem; font-size: 1rem; }
+.feature p { margin: 0; color: var(--muted); font-size: .88rem; }
+
+.trust {
+  background: linear-gradient(135deg, rgba(123,123,240,.14), rgba(91,91,214,.05));
+  border: 1px solid rgba(123,123,240,.3); border-radius: 20px;
+  text-align: center; padding: 2.6rem 1.6rem;
+}
+.trust h2 { margin-bottom: .7rem; }
+.trust p { color: var(--muted); max-width: 44rem; margin: 0 auto; }
+.trust b { color: var(--ink); }
+
+.finale { text-align: center; padding: 4rem 0 4.6rem; }
+.finale h2 { font-size: 2rem; }
+
+footer {
+  border-top: 1px solid var(--line); padding: 1.6rem 0 2.4rem;
+  color: var(--muted); font-size: .86rem;
+  display: flex; gap: .8rem 1.6rem; justify-content: center; flex-wrap: wrap;
+}
+footer a { color: var(--muted); }
+footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="logo">
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M32 12.6a19.4 19.4 0 1 1-16.8 9.7" fill="none" stroke="#7b7bf0" stroke-width="8"/>
+      <path d="M8.4 24.2 22 20.5l-3.1 13.7z" fill="#7b7bf0"/>
+      <circle cx="32" cy="32" r="9.6" fill="#e8eaf2"/>
+      <circle cx="32" cy="32" r="4" fill="#5b5bd6"/>
+    </svg>
+    Spare<b>Cycles</b>
+  </span>
+  <span class="spacer"></span>
+  <a class="ghbtn" href="https://github.com/stevologic/spare-cycles">★ GitHub</a>
+</header>
+
+<div class="hero">
+  <span class="eyebrow">♻️ open source · MIT · donation-only</span>
+  <h1>Some devs have <span class="a">tokens</span> and no ideas.<br>
+      Some have <span class="a">ideas</span> and no tokens.</h1>
+  <p class="sub">SpareCycles is the trade between them — a marketplace of vibe-coding
+  projects and a pool of donated AI compute. Point your idle subscription, API key,
+  or local GPU at a project you believe in. <b style="color:var(--ink)">GoFundMe, but the
+  currency is tokens.</b></p>
+  <div class="ctas">
+    <a class="btn primary" href="https://github.com/stevologic/spare-cycles">Get the code →</a>
+    <a class="btn ghost" href="https://github.com/stevologic/spare-cycles/blob/main/DEPLOY.md">Deploy in 5 minutes</a>
+    <a class="btn ghost" href="https://github.com/stevologic/spare-cycles/blob/main/VISION.md">Read the vision</a>
+  </div>
+  <div class="factline">
+    <span><b>1</b> process to run a pool</span>
+    <span><b>0</b> provider keys stored server-side</span>
+    <span><b>52</b> tests, CI on Linux + Windows</span>
+    <span><b>7+</b> runners, cloud &amp; local</span>
+  </div>
+</div>
+
+<section id="how">
+  <h2>The trade, in three moves</h2>
+  <p class="lead">Every serious AI-assisted developer has hit “out of usage until 7pm”
+  mid-flow — and also left a Max subscription idle overnight. Supply and demand live
+  in the same community.</p>
+  <div class="steps">
+    <div class="step"><span class="n">1</span>
+      <h3>Bring your project</h3>
+      <p>List it on the marketplace. You get a public page, a batch queue, and an
+      OpenAI-compatible endpoint any tool can call — Hermes, aider, plain curl.</p>
+    </div>
+    <div class="step"><span class="n">2</span>
+      <h3>Point an idle agent at someone's</h3>
+      <p>One stdlib-only script pairs your machine to your account. It serves only
+      projects you choose, with your Claude/Codex/Grok CLI, a metered key, or
+      Ollama / LM Studio — fully offline.</p>
+    </div>
+    <div class="step"><span class="n">3</span>
+      <h3>Get credited — and boosted</h3>
+      <p>Every completed job lists you as an <b>AI Donor</b> on that project's
+      leaderboard. And donors' own projects jump the queue: give tokens tonight,
+      get priority tomorrow.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>One small server between two crowds</h2>
+  <p class="lead">The coordinator shuffles prompts and answers — never credentials.
+  Nodes connect outbound-only: no open ports, works behind home NAT.</p>
+  <div class="diagram-panel">
+    <svg viewBox="0 0 860 330" role="img" aria-label="Architecture diagram" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#8f94a6"/>
+        </marker>
+      </defs>
+      <rect x="20" y="95" width="210" height="140" rx="12" fill="#1c1e2b" stroke="#262a38"/>
+      <text x="125" y="125" text-anchor="middle" font-size="15" font-weight="700" fill="#e8eaf2">Idea-rich 💡</text>
+      <text x="125" y="150" text-anchor="middle" font-size="12.5" fill="#e8eaf2">project owners &amp; their tools</text>
+      <text x="125" y="170" text-anchor="middle" font-size="11.5" fill="#8f94a6">Hermes · aider · curl · web UI</text>
+      <text x="125" y="196" text-anchor="middle" font-size="11.5" fill="#8f94a6">…but out of tokens</text>
+
+      <rect x="325" y="45" width="210" height="240" rx="12" fill="#1c1e2b" stroke="#7b7bf0"/>
+      <text x="430" y="80" text-anchor="middle" font-size="16" font-weight="800" fill="#e8eaf2">♻️ SpareCycles</text>
+      <rect x="345" y="100" width="170" height="34" rx="8" fill="#0f1017" stroke="#262a38"/>
+      <text x="430" y="122" text-anchor="middle" font-size="12.5" fill="#e8eaf2">Marketplace</text>
+      <rect x="345" y="142" width="170" height="34" rx="8" fill="#0f1017" stroke="#262a38"/>
+      <text x="430" y="164" text-anchor="middle" font-size="12.5" fill="#e8eaf2">Job queue</text>
+      <rect x="345" y="184" width="170" height="34" rx="8" fill="#0f1017" stroke="#262a38"/>
+      <text x="430" y="206" text-anchor="middle" font-size="12.5" fill="#e8eaf2">AI Donor ledger</text>
+      <text x="430" y="245" text-anchor="middle" font-size="11.5" fill="#8f94a6">never sees provider keys</text>
+      <text x="430" y="263" text-anchor="middle" font-size="11.5" fill="#8f94a6">FastAPI + SQLite, one process</text>
+
+      <rect x="630" y="95" width="210" height="140" rx="12" fill="#1c1e2b" stroke="#262a38"/>
+      <text x="735" y="125" text-anchor="middle" font-size="15" font-weight="700" fill="#e8eaf2">Token-rich 🔋</text>
+      <text x="735" y="150" text-anchor="middle" font-size="12.5" fill="#e8eaf2">donor nodes — one script</text>
+      <text x="735" y="170" text-anchor="middle" font-size="11.5" fill="#8f94a6">claude · codex · gemini · grok · APIs</text>
+      <text x="735" y="196" text-anchor="middle" font-size="11.5" fill="#8f94a6">ollama · LM Studio (offline)</text>
+
+      <line x1="230" y1="135" x2="325" y2="135" stroke="#8f94a6" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="277" y="126" text-anchor="middle" font-size="11.5" fill="#8f94a6">prompt</text>
+      <line x1="325" y1="185" x2="230" y2="185" stroke="#8f94a6" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="277" y="203" text-anchor="middle" font-size="11.5" fill="#8f94a6">answer</text>
+      <line x1="630" y1="135" x2="535" y2="135" stroke="#8f94a6" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="582" y="126" text-anchor="middle" font-size="11.5" fill="#8f94a6">poll &amp; claim</text>
+      <line x1="630" y1="185" x2="535" y2="185" stroke="#8f94a6" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="582" y="203" text-anchor="middle" font-size="11.5" fill="#8f94a6">post answer</text>
+
+      <text x="430" y="315" text-anchor="middle" font-size="12" fill="#8f94a6">Outbound-only nodes — no port forwarding, no firewall holes.</text>
+    </svg>
+  </div>
+</section>
+
+<section>
+  <h2>Zero integration cost</h2>
+  <p class="lead">If your tool speaks OpenAI, it already speaks SpareCycles.</p>
+  <div class="codegrid">
+    <div class="codecard">
+      <h3>Use a pool from any tool</h3>
+      <p>Swap one base URL. Model preference, fallback, temperature and max&nbsp;tokens
+      ride along with every job.</p>
+<pre><span class="k">from</span> openai <span class="k">import</span> OpenAI
+
+client = OpenAI(
+    base_url=<span class="s">"https://your-pool.example/v1"</span>,
+    api_key=<span class="s">"sci_..."</span>,  <span class="c"># project inference key</span>
+)
+r = client.chat.completions.create(
+    model=<span class="s">"default"</span>,
+    messages=[{<span class="s">"role"</span>: <span class="s">"user"</span>,
+               <span class="s">"content"</span>: <span class="s">"plan the refactor"</span>}],
+)</pre>
+    </div>
+    <div class="codecard">
+      <h3>Become a donor</h3>
+      <p>Stdlib-only Python — nothing to install. Auto-detects your CLIs, API keys,
+      and local model servers, then advertises what it can serve.</p>
+<pre><span class="c"># pair once (code from your Account page)</span>
+python node_connector.py \
+  --server https://your-pool.example \
+  --code AB12-CD34
+
+<span class="c"># check on it any time</span>
+python node_connector.py --status
+<span class="c">#   ONLINE · serving: doge-miner · 41 jobs done</span></pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Built like it means it</h2>
+  <div class="grid" style="margin-top:2rem">
+    <div class="feature"><span class="e">🔐</span><h3>Keys never leave the node</h3>
+      <p>The server stores only hashes of tokens it issued itself. Provider keys live in your env vars, on your machine, full stop.</p></div>
+    <div class="feature"><span class="e">🖥️</span><h3>Local models count</h3>
+      <p>Ollama and LM Studio are auto-detected; installed models are advertised by name. Donate your GPU, not just your subscription.</p></div>
+    <div class="feature"><span class="e">⚡</span><h3>Karma flywheel</h3>
+      <p>Projects whose owners donate get claimed first at equal priority. Boolean, never proportional — newcomers are queued, not starved.</p></div>
+    <div class="feature"><span class="e">☀️</span><h3>Public by default</h3>
+      <p>Every job's prompt and output is visible on the project page. Sunlight is the anti-abuse mechanism.</p></div>
+    <div class="feature"><span class="e">🏆</span><h3>AI Donor identity</h3>
+      <p>Leaderboards per project, public profiles with the apps you've built and the projects you've carried.</p></div>
+    <div class="feature"><span class="e">🔑</span><h3>Recoverable accounts</h3>
+      <p>Five one-time recovery codes, plus any paired node can mint you a fresh key. No email required, no passwords ever.</p></div>
+    <div class="feature"><span class="e">📦</span><h3>One-process deploy</h3>
+      <p>FastAPI + SQLite on a $6 droplet — or your desktop behind a tunnel. systemd + Caddy guide included.</p></div>
+    <div class="feature"><span class="e">✅</span><h3>Tested, honestly</h3>
+      <p>52 tests including a live realtime round-trip through a real server and the real connector script. CI on Linux and Windows.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="trust">
+    <h2>Donation-only. By design.</h2>
+    <p><b>No money moves. Tokens are never sold.</b> That single rule keeps the platform
+    out of “reselling API access” territory, keeps node operators in control of their own
+    provider terms, and keeps the whole thing what it should be: a community pooling its
+    spare cycles behind the projects it wants to exist.</p>
+  </div>
+</section>
+
+<div class="finale">
+  <h2>Your agent is idle right now.</h2>
+  <p class="sub" style="margin-bottom:1.8rem">Run a pool for your own machines in five minutes —
+  donation is a layer on top of a tool that's already worth running selfishly.</p>
+  <div class="ctas">
+    <a class="btn primary" href="https://github.com/stevologic/spare-cycles">github.com/stevologic/spare-cycles →</a>
+  </div>
+</div>
+
+</div>
+<footer>
+  <span>♻️ SpareCycles</span>
+  <a href="https://github.com/stevologic/spare-cycles">GitHub</a>
+  <a href="https://github.com/stevologic/spare-cycles/blob/main/VISION.md">Vision</a>
+  <a href="https://github.com/stevologic/spare-cycles/blob/main/DEPLOY.md">Deploy guide</a>
+  <a href="https://github.com/stevologic/spare-cycles/blob/main/LICENSE">MIT license</a>
+</footer>
+</body>
+</html>
