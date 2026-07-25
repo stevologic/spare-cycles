@@ -1,6 +1,7 @@
 # ♻️ SpareCycles
 
 ![CI](https://github.com/stevologic/spare-cycles/actions/workflows/ci.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/license-MIT-5b5bd6.svg)
 
 **Some devs have tokens and no ideas. Some have ideas and no tokens.**
 
@@ -141,5 +142,10 @@ generated — edit `tools/generate_brand_assets.py` and re-run it
 an absolute URL: the server derives it from the request, or set
 `SPARECYCLES_PUBLIC_URL=https://your.domain` when behind a proxy or tunnel.
 
-Roadmap highlights (see VISION.md): karma credits, GitHub `issue` jobs that
-open PRs, pledge scheduling, trusted-donor tiers, ollama runner.
+Roadmap highlights (see VISION.md): spendable karma credits, GitHub `issue`
+jobs that open PRs, pledge scheduling, trusted-donor tiers.
+
+## License
+
+[MIT](LICENSE) — run your own pool, fork it, embed it. Contributions welcome;
+CI runs the full suite on every PR.
