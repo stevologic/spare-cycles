@@ -1,0 +1,5 @@
+# Shell scripts and Dockerfiles must stay LF — CRLF breaks bash and some
+# docker parsers when checked out on Windows and copied to a Linux host.
+*.sh text eol=lf
+Dockerfile* text eol=lf
+Caddyfile text eol=lf
