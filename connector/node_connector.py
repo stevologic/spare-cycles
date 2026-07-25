@@ -305,6 +305,12 @@ def main() -> int:
     ap.add_argument("--runners", help="comma list to restrict runners (e.g. claude,echo)")
     ap.add_argument("--models", help="comma list of model patterns this node serves")
     ap.add_argument("--once", action="store_true", help="process one job, then exit")
+    ap.add_argument("--max-seconds", type=int, default=0, metavar="N",
+                    help="serve for at most N seconds, then exit cleanly "
+                         "(time-boxed check-ins, e.g. CI runners)")
+    ap.add_argument("--idle-exit", type=int, default=0, metavar="N",
+                    help="exit after N seconds with no work claimed "
+                         "(don't burn CI minutes on an empty queue)")
     ap.add_argument("--recover", action="store_true",
                     help="lost your account API key? this paired node can mint "
                          "a fresh one (the old key stops working)")
@@ -329,9 +335,16 @@ def main() -> int:
             ap.error("--code requires --server")
         cfg = register(args.server.rstrip("/"), args.code.upper(), args.name,
                        runners, models)
-    if not cfg.get("node_token"):
-        ap.error("not registered — run once with --server URL --code XXXX-XXXX")
-    server, token = cfg["server"], cfg["node_token"]
+    # Credentials resolve env-first so ephemeral hosts (CI runners, containers)
+    # can check in with a durable node token and no config file: pair once
+    # anywhere, then copy node_token from ~/.sparecycles/node.json into the
+    # host's secrets as SPARECYCLES_NODE_TOKEN (+ SPARECYCLES_SERVER).
+    token = os.environ.get("SPARECYCLES_NODE_TOKEN") or cfg.get("node_token")
+    server = (args.server or os.environ.get("SPARECYCLES_SERVER")
+              or cfg.get("server") or "").rstrip("/")
+    if not (server and token):
+        ap.error("not registered — pair with --server URL --code XXXX-XXXX, or "
+                 "set SPARECYCLES_SERVER + SPARECYCLES_NODE_TOKEN (CI check-ins)")
 
     if args.status:
         print(f"\n  SpareCycles node status — {server}\n")
@@ -372,12 +385,27 @@ def main() -> int:
     log(f"SpareCycles node '{cfg.get('name', args.name)}' → {server}")
     log(f"runners: {', '.join(runners)}   models: {', '.join(models)}")
     log("keys stay in this machine's environment; only prompts/answers move.")
+    if args.max_seconds:
+        log(f"time-boxed check-in: serving for up to {args.max_seconds}s")
+
+    started = last_work = time.time()
+    served = 0
 
     while True:
+        if args.max_seconds and time.time() - started >= args.max_seconds:
+            log(f"time budget reached — served {served} job(s) this check-in. bye.")
+            return 0
+        if args.idle_exit and time.time() - last_work >= args.idle_exit:
+            log(f"queue idle for {args.idle_exit}s — served {served} job(s) "
+                "this check-in. bye.")
+            return 0
+        wait = 20
+        if args.max_seconds:  # shrink the long-poll near the deadline
+            wait = max(1, min(20, int(started + args.max_seconds - time.time())))
         try:
             resp = http_json("POST", f"{server}/api/nodes/poll",
                              {"runners": sorted(runners), "models": models,
-                              "wait": 20},
+                              "wait": wait},
                              token=token, timeout=40)
         except urllib.error.HTTPError as e:
             log(f"server rejected poll ({e.code}): {e.read().decode()[:200]}")
@@ -399,6 +427,8 @@ def main() -> int:
             result = execute(runners, job)
             http_json("POST", f"{server}/api/nodes/jobs/{job['id']}/complete",
                       result, token=token)
+            served += 1
+            last_work = time.time()
             log(f"  ✓ job #{job['id']} done "
                 f"({len(result['output'])} chars, runner {result['runner']})")
         except Exception as e:  # noqa: BLE001 — report any failure to the pool

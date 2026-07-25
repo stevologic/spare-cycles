@@ -76,6 +76,33 @@ python connector/node_connector.py --status
 It prints the runners this machine can serve, whether the pool sees your node
 as online, which queues it serves, and its last few jobs.
 
+## Donate your CI minutes (GitHub Action)
+
+Your repo's Actions runners can check in as donor nodes too — a scheduled
+workflow that serves the queue for N minutes, then leaves:
+
+```yaml
+- uses: stevologic/spare-cycles@main
+  with:
+    server: https://your-pool.example.com
+    node-token: ${{ secrets.SPARECYCLES_NODE_TOKEN }}
+    models: "claude*,gpt*"
+    minutes: 20
+    idle-exit: 120        # quit early if the queue stays empty
+  env:                     # provider keys = which runners you donate with
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+```
+
+Full copy-paste workflow (nightly cron + manual trigger) in
+[examples/donate.yml](examples/donate.yml). The node token comes from pairing
+once anywhere (`node_connector.py --server … --code …` → copy `node_token`
+out of `~/.sparecycles/node.json` into a repo secret). CI hosts have no AI
+CLIs, so donations flow through the direct API runners — metered keys, the
+ToS-clean way to give. Time-boxed check-ins also work anywhere else:
+`node_connector.py --max-seconds 1200 --idle-exit 120`.
+
 ## Use the pool from your tools
 
 Any OpenAI-compatible client works — set the base URL and use the project's

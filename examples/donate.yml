@@ -1,0 +1,41 @@
+# Donate your repo's spare CI minutes to a SpareCycles pool.
+#
+# Copy this file into your repo as .github/workflows/donate.yml, then add
+# repo secrets (Settings → Secrets and variables → Actions):
+#
+#   SPARECYCLES_NODE_TOKEN   scn_... — pair once anywhere with
+#                            `python node_connector.py --server ... --code ...`
+#                            and copy node_token from ~/.sparecycles/node.json
+#   ANTHROPIC_API_KEY        whichever provider keys you want to donate with —
+#   OPENAI_API_KEY           the connector auto-detects the ones that are set
+#   XAI_API_KEY              and only advertises models it can actually serve.
+#
+# CI runners have no claude/codex CLIs installed, so in CI your donations flow
+# through the direct API runners (metered keys — the ToS-clean way to donate).
+# Keys are read from env by the connector on the runner and are never sent to
+# the pool: only prompts and answers move.
+
+name: SpareCycles donor check-in
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # check in nightly at 03:17 UTC
+  workflow_dispatch: {}     # ...and whenever you feel generous
+
+jobs:
+  donate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Serve the pool for up to 20 minutes
+        uses: stevologic/spare-cycles@main
+        with:
+          server: https://your-pool.example.com
+          node-token: ${{ secrets.SPARECYCLES_NODE_TOKEN }}
+          models: "claude*,gpt*"   # what you're willing to serve
+          minutes: 20
+          idle-exit: 120           # quit early if the queue stays empty
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}

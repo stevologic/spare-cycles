@@ -1,0 +1,54 @@
+name: "SpareCycles donor check-in"
+description: >-
+  Donate CI minutes to a SpareCycles pool: check in as a donor node, process
+  queued AI jobs with your provider API keys (passed as env secrets), then
+  exit. Time-boxed and idle-aware so it never burns minutes on an empty queue.
+author: "SpareCycles contributors"
+branding:
+  icon: refresh-cw
+  color: purple
+
+inputs:
+  server:
+    description: "SpareCycles pool URL (e.g. https://pool.example.com)"
+    required: true
+  node-token:
+    description: >-
+      Durable node token (scn_...). Pair once anywhere with
+      `node_connector.py --server ... --code ...`, copy `node_token` from
+      ~/.sparecycles/node.json, and store it as a repo secret.
+    required: true
+  models:
+    description: 'Comma list of model patterns to serve (e.g. "claude*,gpt-5*"). Empty = whatever your runners can serve.'
+    required: false
+    default: ""
+  runners:
+    description: 'Comma list to restrict runners (e.g. "anthropic-api,openai-api"). Empty = auto-detect.'
+    required: false
+    default: ""
+  minutes:
+    description: "Maximum minutes to serve this check-in."
+    required: false
+    default: "15"
+  idle-exit:
+    description: "Exit after this many seconds with no work (0 = wait out the full check-in)."
+    required: false
+    default: "120"
+
+runs:
+  using: composite
+  steps:
+    - name: Serve the pool
+      shell: bash
+      env:
+        SPARECYCLES_SERVER: ${{ inputs.server }}
+        SPARECYCLES_NODE_TOKEN: ${{ inputs.node-token }}
+        SC_MODELS: ${{ inputs.models }}
+        SC_RUNNERS: ${{ inputs.runners }}
+        SC_MINUTES: ${{ inputs.minutes }}
+        SC_IDLE_EXIT: ${{ inputs.idle-exit }}
+      run: |
+        args=(--max-seconds "$(( SC_MINUTES * 60 ))" --idle-exit "$SC_IDLE_EXIT")
+        [ -n "$SC_RUNNERS" ] && args+=(--runners "$SC_RUNNERS")
+        [ -n "$SC_MODELS" ]  && args+=(--models "$SC_MODELS")
+        python3 "${{ github.action_path }}/connector/node_connector.py" "${args[@]}"
