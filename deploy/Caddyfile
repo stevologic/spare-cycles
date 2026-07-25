@@ -1,0 +1,11 @@
+# DOMAIN set (e.g. pool.example.com) -> automatic HTTPS via Let's Encrypt.
+# DOMAIN empty                        -> plain HTTP on :80 (IP-only access).
+#
+# Caddy adds X-Forwarded-Proto/Host, which the server uses to build absolute
+# link-preview URLs — no extra config needed. No proxy read timeout is set,
+# so the pool's long-polls (node 25s, realtime up to 180s) pass through fine.
+
+{$DOMAIN::80} {
+	encode gzip
+	reverse_proxy server:8377
+}

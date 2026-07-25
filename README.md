@@ -187,9 +187,17 @@ pytest
 
 52 tests cover the API surface, queue protocol, recovery paths, karma
 ordering, and a full realtime round-trip through a live server and the real
-connector script; CI runs them on Linux and Windows. See
-[DEPLOY.md](DEPLOY.md) for the droplet/systemd/Caddy production guide —
-the short version is `uvicorn server.main:app` behind any HTTPS proxy, with
+connector script; CI runs them on Linux and Windows.
+
+Production deploy is one command on a fresh droplet — Docker Compose with
+automatic HTTPS (Caddy) and automatic image updates (Watchtower):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/stevologic/spare-cycles/main/deploy/setup-droplet.sh \
+  | sudo DOMAIN=pool.example.com bash
+```
+
+Details (plus the bare-metal systemd path) in [DEPLOY.md](DEPLOY.md);
 `GET /api/health` for your uptime monitor.
 
 ## Safety model (short version)
@@ -212,6 +220,7 @@ the short version is `uvicorn server.main:app` behind any HTTPS proxy, with
 | `server/` | FastAPI app + SQLite (`server.main:app`) |
 | `web/` | zero-build vanilla JS UI served at `/`, plus generated brand assets |
 | `connector/node_connector.py` | the node agent (stdlib only) |
+| `deploy/` | droplet stack: compose + Caddy + Watchtower + bootstrap script |
 | `tools/generate_brand_assets.py` | regenerates favicons, app icons & the link-preview card |
 | `VISION.md` | the vetted vision & roadmap |
 

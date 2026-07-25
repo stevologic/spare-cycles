@@ -1,12 +1,15 @@
-name: Docker image
+name: Docker images
 
 on:
   push:
     branches: [main]
     paths:
       - Dockerfile
+      - Dockerfile.server
       - .dockerignore
       - connector/**
+      - server/**
+      - web/**
       - .github/workflows/docker.yml
   workflow_dispatch: {}
 
@@ -17,6 +20,12 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: spare-cycles, dockerfile: Dockerfile }
+          - { image: spare-cycles-server, dockerfile: Dockerfile.server }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -29,8 +38,9 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/stevologic/spare-cycles:latest
-            ghcr.io/stevologic/spare-cycles:${{ github.sha }}
+            ghcr.io/stevologic/${{ matrix.image }}:latest
+            ghcr.io/stevologic/${{ matrix.image }}:${{ github.sha }}

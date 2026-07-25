@@ -1,0 +1,33 @@
+# SpareCycles pool server — the coordinator (API + web UI + queue).
+#
+#   docker run -d -p 8377:8377 -v sc-data:/data ghcr.io/stevologic/spare-cycles-server
+#
+# In production run it behind the compose stack in deploy/ (Caddy terminates
+# HTTPS, Watchtower keeps this image current). SQLite lives in /data.
+
+FROM python:3.12-slim
+
+LABEL org.opencontainers.image.source="https://github.com/stevologic/spare-cycles"
+LABEL org.opencontainers.image.description="SpareCycles pool server - marketplace, queue, OpenAI-compatible proxy"
+LABEL org.opencontainers.image.licenses="MIT"
+
+WORKDIR /app
+
+COPY server/requirements.txt /app/server/requirements.txt
+RUN pip install --no-cache-dir -r server/requirements.txt
+
+COPY server /app/server
+COPY web /app/web
+
+ENV SPARECYCLES_DATA=/data
+RUN useradd -r sparecycles && mkdir -p /data && chown sparecycles /data
+USER sparecycles
+VOLUME /data
+EXPOSE 8377
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8377/api/health', timeout=4).status == 200 else 1)"]
+
+CMD ["python", "-m", "uvicorn", "server.main:app", \
+     "--host", "0.0.0.0", "--port", "8377", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

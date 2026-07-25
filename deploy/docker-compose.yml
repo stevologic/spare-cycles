@@ -1,0 +1,51 @@
+# SpareCycles pool — production stack for a small VPS (DigitalOcean droplet).
+#
+#   server     the coordinator (API + web UI), SQLite in the sc-data volume
+#   caddy      HTTPS: automatic Let's Encrypt when DOMAIN is set, plain :80 otherwise
+#   watchtower auto-pulls new server images every 5 min and restarts the container
+#
+# Quick start (or just run setup-droplet.sh):
+#   cp .env.example .env   # set DOMAIN
+#   docker compose up -d
+
+services:
+  server:
+    image: ghcr.io/stevologic/spare-cycles-server:latest
+    restart: unless-stopped
+    environment:
+      # Optional — Caddy's X-Forwarded headers usually make this unnecessary.
+      SPARECYCLES_PUBLIC_URL: ${SPARECYCLES_PUBLIC_URL:-}
+      # Optional — live model catalogs in the New-project form (metadata only,
+      # never used for inference).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+    volumes:
+      - sc-data:/data
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --label-enable --cleanup --interval 300
+
+volumes:
+  sc-data:
+  caddy-data:
+  caddy-config:

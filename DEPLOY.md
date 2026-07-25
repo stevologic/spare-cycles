@@ -5,7 +5,43 @@ droplet (or a spare machine + tunnel) runs it comfortably. The server never
 performs inference, so it needs no GPU and barely any CPU: it shuffles small
 JSON between submitters and donor nodes.
 
-## 1. Server on a VPS (DigitalOcean droplet, any Ubuntu box)
+## Option A — Docker Compose on a droplet (recommended)
+
+One command on a fresh Ubuntu droplet:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/stevologic/spare-cycles/main/deploy/setup-droplet.sh \
+  | sudo DOMAIN=pool.example.com bash
+```
+
+(Leave `DOMAIN=` off to serve plain HTTP on the droplet's IP while you try
+things out; re-run with it later for HTTPS.)
+
+That installs Docker, opens the firewall (SSH/80/443), and starts the stack
+in `/opt/sparecycles` — after which the pool stays online and current by
+itself:
+
+| Piece | Job |
+|---|---|
+| `server` | `ghcr.io/stevologic/spare-cycles-server` — API + web UI, SQLite in the `sc-data` volume |
+| `caddy` | automatic Let's Encrypt HTTPS when `DOMAIN` is set; long-poll-safe proxying |
+| `watchtower` | **pulls the latest server image every 5 min** and restarts it cleanly |
+| `restart: unless-stopped` + Docker's systemd unit | everything comes back after reboots and crashes |
+
+Prefer doing it by hand? The same stack is three files:
+
+```bash
+sudo mkdir -p /opt/sparecycles && cd /opt/sparecycles
+sudo curl -fsSLO https://raw.githubusercontent.com/stevologic/spare-cycles/main/deploy/docker-compose.yml
+sudo curl -fsSLO https://raw.githubusercontent.com/stevologic/spare-cycles/main/deploy/Caddyfile
+echo "DOMAIN=pool.example.com" | sudo tee .env
+sudo docker compose up -d
+```
+
+Manual update any time (Watchtower normally handles it):
+`bash /opt/sparecycles/update.sh` — a `docker compose pull && docker compose up -d`.
+
+## Option B — bare metal (venv + systemd)
 
 ```bash
 sudo apt update && sudo apt install -y python3-venv git
@@ -76,7 +112,18 @@ previews carry absolute URLs.
 
 ## 4. Backups
 
-Everything lives in one file. From cron:
+Everything lives in one SQLite file.
+
+Docker stack (Option A) — safe online backup from cron:
+
+```bash
+docker compose -f /opt/sparecycles/docker-compose.yml exec -T server \
+  python -c "import sqlite3; sqlite3.connect('/data/sparecycles.db').execute(\"VACUUM INTO '/data/backup.db'\")" \
+  && docker cp "$(docker compose -f /opt/sparecycles/docker-compose.yml ps -q server)":/data/backup.db \
+       /backups/sparecycles-$(date +%F).db
+```
+
+Bare metal (Option B):
 
 ```bash
 sqlite3 /opt/sparecycles/app/data/sparecycles.db ".backup /backups/sparecycles-$(date +%F).db"

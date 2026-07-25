@@ -1,2 +1,7 @@
+# Keep build contexts minimal. The connector image needs one file; the
+# server image needs server/ + web/. Everything else stays out.
 *
 !connector/node_connector.py
+!server/
+!web/
+server/__pycache__/
