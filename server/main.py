@@ -10,6 +10,7 @@ import re
 import secrets
 import time
 import urllib.request
+from collections import defaultdict, deque
 from fnmatch import fnmatch
 
 from fastapi import FastAPI, HTTPException, Request
@@ -28,6 +29,35 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 db.init()
+START_TIME = time.time()
+
+# In-process wakeups so realtime work moves the moment something changes,
+# instead of on the next poll tick. The DB stays the source of truth — these
+# only cut latency; the 0.5-1s poll fallback below still guarantees progress.
+_job_added = asyncio.Event()      # a job entered the queue
+_job_finished = asyncio.Event()   # a job reached a terminal state
+
+
+# ------------------------------------------------------------- rate limiting
+
+_BUCKETS: dict[str, deque] = defaultdict(deque)
+
+
+def throttle(request: Request, bucket: str, limit: int, window: float) -> None:
+    """Small in-memory sliding-window limiter for unauthenticated endpoints.
+    Guards account registration and — critically — recovery-code guessing.
+    Set SPARECYCLES_RATELIMIT=off to disable (tests, trusted deployments)."""
+    if os.environ.get("SPARECYCLES_RATELIMIT") == "off":
+        return
+    ip = ((request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+          or (request.client.host if request.client else "?"))
+    q = _BUCKETS[f"{bucket}:{ip}"]
+    now_t = time.time()
+    while q and now_t - q[0] > window:
+        q.popleft()
+    if len(q) >= limit:
+        raise HTTPException(429, "too many requests — slow down and retry shortly")
+    q.append(now_t)
 
 
 # ---------------------------------------------------------------- helpers
@@ -50,7 +80,8 @@ def require_account(conn, request: Request):
 
 def require_node(conn, request: Request):
     row = conn.execute(
-        "SELECT * FROM nodes WHERE token_hash=?", (db.hash_key(bearer(request)),)
+        "SELECT * FROM nodes WHERE token_hash=? AND revoked_at IS NULL",
+        (db.hash_key(bearer(request)),),
     ).fetchone()
     if not row:
         raise HTTPException(401, "invalid node token")
@@ -165,13 +196,22 @@ def try_claim(node, node_models: list[str]) -> dict | None:
         conn.execute(
             "UPDATE nodes SET last_seen=? WHERE id=?", (db.now(), node["id"])
         )
+        # Ordering encodes the karma flywheel (v1): realtime before batch,
+        # then projects whose owners have themselves completed donations get
+        # a modest boost over non-donors, then strict FIFO. Boolean, not
+        # proportional — newcomers are queued behind donors, never starved.
         candidates = conn.execute(
             """SELECT j.* FROM jobs j JOIN projects p ON p.id=j.project_id
                WHERE j.status='queued'
                  AND (p.owner_id=:acct OR EXISTS(
                       SELECT 1 FROM supports s
                       WHERE s.project_id=p.id AND s.account_id=:acct))
-               ORDER BY (j.kind='realtime') DESC, j.created_at ASC LIMIT 50""",
+               ORDER BY (j.kind='realtime') DESC,
+                        CASE WHEN EXISTS(
+                          SELECT 1 FROM jobs j2 JOIN nodes n2 ON n2.id=j2.node_id
+                          WHERE n2.account_id = p.owner_id AND j2.status='done'
+                        ) THEN 0 ELSE 1 END,
+                        j.created_at ASC LIMIT 50""",
             {"acct": node["account_id"]},
         ).fetchall()
         for job in candidates:
@@ -255,6 +295,7 @@ def rotate_account_key(conn, account_id: int) -> str:
 
 @app.post("/api/register")
 async def register(request: Request):
+    throttle(request, "register", limit=20, window=3600)
     body = await request.json()
     name = (body.get("name") or "").strip().lower()
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,29}", name):
@@ -283,6 +324,9 @@ async def register(request: Request):
 
 @app.post("/api/recover")
 async def recover_with_code(request: Request):
+    # Tight limit: recovery codes are high-entropy, but without a throttle a
+    # patient attacker could still grind at them. 10 tries per 15 minutes.
+    throttle(request, "recover", limit=10, window=900)
     body = await request.json()
     name = (body.get("name") or "").strip().lower()
     code = (body.get("recovery_code") or "").strip().upper()
@@ -354,7 +398,8 @@ async def me(request: Request):
         db.requeue_expired(conn)
         nodes = conn.execute(
             "SELECT id, name, runners, models, last_seen, jobs_done FROM nodes "
-            "WHERE account_id=? ORDER BY id", (acct["id"],)
+            "WHERE account_id=? AND revoked_at IS NULL ORDER BY id",
+            (acct["id"],)
         ).fetchall()
         projects = conn.execute(
             "SELECT * FROM projects WHERE owner_id=? ORDER BY id", (acct["id"],)
@@ -420,7 +465,8 @@ async def public_profile(name: str):
             (acct["id"],),
         ).fetchone()
         nodes_online = conn.execute(
-            "SELECT COUNT(*) FROM nodes WHERE account_id=? AND last_seen > ?",
+            "SELECT COUNT(*) FROM nodes WHERE account_id=? AND last_seen > ? "
+            "AND revoked_at IS NULL",
             (acct["id"], db.now() - NODE_ONLINE_WINDOW),
         ).fetchone()[0]
 
@@ -441,6 +487,19 @@ async def public_profile(name: str):
         }
 
 
+@app.get("/api/health")
+async def health():
+    """Liveness + a real DB round-trip, for uptime checks and deploy scripts."""
+    with db.connect() as conn:
+        accounts = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+    return {
+        "ok": True,
+        "uptime_seconds": int(time.time() - START_TIME),
+        "accounts": accounts,
+        "version": asset_version(),
+    }
+
+
 @app.get("/api/stats")
 async def stats():
     with db.connect() as conn:
@@ -450,7 +509,8 @@ async def stats():
             "projects": conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0],
             "accounts": conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0],
             "nodes_online": conn.execute(
-                "SELECT COUNT(*) FROM nodes WHERE last_seen > ?",
+                "SELECT COUNT(*) FROM nodes WHERE last_seen > ? "
+                "AND revoked_at IS NULL",
                 (t - NODE_ONLINE_WINDOW,),
             ).fetchone()[0],
             "jobs_done": conn.execute(
@@ -511,18 +571,99 @@ async def create_project(request: Request):
         }
 
 
+def owner_is_donor(conn, owner_id: int) -> bool:
+    """Has this account's nodes completed at least one donation? Powers the
+    karma-v1 queue boost and the marketplace 'donor' badge."""
+    return bool(conn.execute(
+        "SELECT 1 FROM jobs j JOIN nodes n ON n.id=j.node_id "
+        "WHERE n.account_id=? AND j.status='done' LIMIT 1",
+        (owner_id,),
+    ).fetchone())
+
+
+@app.patch("/api/projects/{slug}")
+async def edit_project(slug: str, request: Request):
+    body = await request.json()
+    with db.connect() as conn:
+        acct = require_account(conn, request)
+        p = conn.execute("SELECT * FROM projects WHERE slug=?", (slug,)).fetchone()
+        if not p:
+            raise HTTPException(404, "no such project")
+        if p["owner_id"] != acct["id"]:
+            raise HTTPException(403, "only the project owner can edit it")
+
+        def pick(field, cap=None, current=None):
+            v = body.get(field)
+            if v is None:
+                return current if current is not None else p[field]
+            v = str(v).strip()
+            return v[:cap] if cap else v
+
+        name = pick("name", 80)
+        model = pick("model")
+        if not name:
+            raise HTTPException(400, "name cannot be empty")
+        if not model:
+            raise HTTPException(400, "model preference is required")
+        temp = body.get("temperature", p["temperature"])
+        max_tok = body.get("max_tokens", p["max_tokens"])
+        conn.execute(
+            """UPDATE projects SET name=?, tagline=?, description=?, repo_url=?,
+                 model=?, fallback_model=?, temperature=?, max_tokens=?
+               WHERE id=?""",
+            (
+                name, pick("tagline", 140), pick("description", 4000),
+                pick("repo_url", 300), model, pick("fallback_model"),
+                temp, max_tok, p["id"],
+            ),
+        )
+        updated = conn.execute(
+            "SELECT * FROM projects WHERE id=?", (p["id"],)
+        ).fetchone()
+        return project_public(updated, project_stats(conn, p["id"]))
+
+
+@app.post("/api/projects/{slug}/rotate_key")
+async def rotate_inference_key(slug: str, request: Request):
+    """Owner-only: mint a fresh inference key (the old one dies instantly).
+    The escape hatch for a leaked or lost project key."""
+    with db.connect() as conn:
+        acct = require_account(conn, request)
+        p = conn.execute("SELECT * FROM projects WHERE slug=?", (slug,)).fetchone()
+        if not p:
+            raise HTTPException(404, "no such project")
+        if p["owner_id"] != acct["id"]:
+            raise HTTPException(403, "only the project owner can rotate its key")
+        key, key_hash = db.new_key("sci")
+        conn.execute(
+            "UPDATE projects SET inference_key_hash=? WHERE id=?",
+            (key_hash, p["id"]),
+        )
+        return {
+            "slug": slug,
+            "inference_key": key,
+            "note": "Old inference key is now invalid. Update your tools - "
+                    "this key is never shown again.",
+        }
+
+
 @app.get("/api/projects")
 async def list_projects():
     with db.connect() as conn:
         db.requeue_expired(conn)
         rows = conn.execute(
-            "SELECT p.*, a.display_name AS owner_name FROM projects p "
+            "SELECT p.*, a.display_name AS owner_name, a.name AS owner_login "
+            "FROM projects p "
             "JOIN accounts a ON a.id=p.owner_id ORDER BY p.created_at DESC"
         ).fetchall()
         out = []
         for r in rows:
-            out.append(project_public(r, {"owner": r["owner_name"],
-                                          **project_stats(conn, r["id"])}))
+            out.append(project_public(r, {
+                "owner": r["owner_name"],
+                "owner_login": r["owner_login"],
+                "owner_is_donor": owner_is_donor(conn, r["owner_id"]),
+                **project_stats(conn, r["id"]),
+            }))
         out.sort(key=lambda p: (-p["jobs_done"], -p["supporters"]))
         return {"projects": out}
 
@@ -540,6 +681,7 @@ async def get_project(slug: str):
         return project_public(p, {
             "owner": owner["display_name"],
             "owner_name": owner["name"],
+            "owner_is_donor": owner_is_donor(conn, p["owner_id"]),
             **project_stats(conn, p["id"]),
             "donors": project_donors(conn, p["id"], p["owner_id"]),
         })
@@ -574,7 +716,8 @@ async def project_supporters(slug: str):
         rows = conn.execute(
             """SELECT a.id, a.name, a.display_name, s.created_at,
                       (SELECT COUNT(*) FROM nodes n
-                        WHERE n.account_id = a.id AND n.last_seen > :online)
+                        WHERE n.account_id = a.id AND n.last_seen > :online
+                          AND n.revoked_at IS NULL)
                         AS nodes_online,
                       (SELECT COUNT(*) FROM jobs j JOIN nodes n2 ON n2.id = j.node_id
                         WHERE n2.account_id = a.id AND j.project_id = :pid
@@ -644,7 +787,8 @@ async def queue_job(slug: str, request: Request):
         if p["owner_id"] != acct["id"]:
             raise HTTPException(403, "only the project owner can queue work")
         jid = create_job(conn, p, body, kind="batch")
-        return {"job_id": jid, "status": "queued"}
+    _job_added.set()
+    return {"job_id": jid, "status": "queued"}
 
 
 # ---------------------------------------------------------------- jobs
@@ -664,10 +808,38 @@ async def get_job(job_id: int):
         return job_public(r, r["donor"])
 
 
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: int, request: Request):
+    """Owner-only, queued jobs only. Running jobs are left to their lease —
+    yanking work out from under a node mid-run causes more mess than waiting."""
+    with db.connect() as conn:
+        acct = require_account(conn, request)
+        row = conn.execute(
+            """SELECT j.*, p.owner_id FROM jobs j
+               JOIN projects p ON p.id=j.project_id WHERE j.id=?""",
+            (job_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "no such job")
+        if row["owner_id"] != acct["id"]:
+            raise HTTPException(403, "only the project owner can cancel its jobs")
+        cur = conn.execute(
+            "UPDATE jobs SET status='cancelled', error='cancelled by owner', "
+            "finished_at=? WHERE id=? AND status='queued'",
+            (db.now(), job_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(
+                409, f"job is {row['status']} — only queued jobs can be cancelled")
+    _job_finished.set()
+    return {"ok": True, "job_id": job_id, "status": "cancelled"}
+
+
 @app.get("/api/jobs/{job_id}/wait")
 async def wait_job(job_id: int, timeout: float = 120):
     deadline = time.time() + min(max(timeout, 1), 570)
     while time.time() < deadline:
+        _job_finished.clear()
         with db.connect() as conn:
             db.requeue_expired(conn)
             r = conn.execute(
@@ -678,13 +850,32 @@ async def wait_job(job_id: int, timeout: float = 120):
             ).fetchone()
             if not r:
                 raise HTTPException(404, "no such job")
-            if r["status"] in ("done", "failed", "expired"):
+            if r["status"] in ("done", "failed", "expired", "cancelled"):
                 return job_public(r, r["donor"])
-        await asyncio.sleep(0.5)
+        try:
+            await asyncio.wait_for(_job_finished.wait(), timeout=0.5)
+        except asyncio.TimeoutError:
+            pass
     raise HTTPException(504, "job still pending")
 
 
 # ---------------------------------------------------------------- nodes
+
+@app.delete("/api/nodes/{node_id}")
+async def revoke_node(node_id: int, request: Request):
+    """Revoke a node's token (lost laptop, decommissioned box). The row stays
+    so past donations remain attributed; the token stops working instantly."""
+    with db.connect() as conn:
+        acct = require_account(conn, request)
+        cur = conn.execute(
+            "UPDATE nodes SET revoked_at=? "
+            "WHERE id=? AND account_id=? AND revoked_at IS NULL",
+            (db.now(), node_id, acct["id"]),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, "no such active node on your account")
+        return {"ok": True, "node_id": node_id, "revoked": True}
+
 
 @app.post("/api/pair")
 async def make_pair_code(request: Request):
@@ -794,10 +985,15 @@ async def node_poll(request: Request):
     wait = min(float(body.get("wait", 20)), 25)
     deadline = time.time() + wait
     while True:
+        _job_added.clear()
         job = try_claim(node_d, models)
         if job or time.time() >= deadline:
             return {"job": job}
-        await asyncio.sleep(1.0)
+        # Wake instantly when work arrives; 1s tick as a correctness fallback.
+        try:
+            await asyncio.wait_for(_job_added.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass
 
 
 def _node_job(conn, request: Request, job_id: int):
@@ -831,7 +1027,8 @@ async def complete_job(job_id: int, request: Request):
             "UPDATE nodes SET jobs_done=jobs_done+1, last_seen=? WHERE id=?",
             (db.now(), node["id"]),
         )
-        return {"ok": True}
+    _job_finished.set()
+    return {"ok": True}
 
 
 @app.post("/api/nodes/jobs/{job_id}/fail")
@@ -854,7 +1051,11 @@ async def fail_job(job_id: int, request: Request):
         conn.execute(
             "UPDATE nodes SET last_seen=? WHERE id=?", (db.now(), node["id"])
         )
-        return {"ok": True}
+    # A failed job either re-queued (wake pollers) or went terminal (wake
+    # waiters) — nudge both rather than tracking which happened.
+    _job_added.set()
+    _job_finished.set()
+    return {"ok": True}
 
 
 # ------------------------------------------------------- model catalog
@@ -988,6 +1189,8 @@ def messages_to_prompt(messages: list) -> str:
                 if isinstance(p, dict) and p.get("type") == "text"
             )
         parts.append((m.get("role", "user"), str(content)))
+    if not parts:
+        return ""  # caller 400s on empty — never queue a blank job
     if len(parts) == 1 and parts[0][0] == "user":
         return parts[0][1]
     labels = {"system": "System", "user": "User", "assistant": "Assistant"}
@@ -1043,19 +1246,24 @@ async def chat_completions(request: Request):
         if job_body["model"] in (None, "", "default"):
             job_body["model"] = project["model"]
         jid = create_job(conn, project, job_body, kind="realtime")
+    _job_added.set()
 
     timeout = min(float(request.query_params.get("timeout", 180)), 570)
     deadline = time.time() + timeout
     row = None
     while time.time() < deadline:
+        _job_finished.clear()
         with db.connect() as conn:
             db.requeue_expired(conn)
             row = conn.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
-            if row["status"] in ("done", "failed", "expired"):
+            if row["status"] in ("done", "failed", "expired", "cancelled"):
                 break
-        await asyncio.sleep(0.4)
+        try:
+            await asyncio.wait_for(_job_finished.wait(), timeout=0.5)
+        except asyncio.TimeoutError:
+            pass
 
-    if not row or row["status"] not in ("done", "failed", "expired"):
+    if not row or row["status"] not in ("done", "failed", "expired", "cancelled"):
         return openai_error(
             504,
             f"no donor node answered within {int(timeout)}s "

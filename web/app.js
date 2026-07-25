@@ -56,6 +56,7 @@ async function viewHome() {
       <div class="tagline">${esc(p.tagline || p.description.slice(0, 120) || "A vibe-coding project looking for AI donors.")}</div>
       <div class="meta">
         <span>by <b>${esc(p.owner)}</b></span>
+        ${p.owner_is_donor ? `<span class="badge owner" title="This owner's nodes donate to other projects — their queue gets a modest boost">⚡ donor</span>` : ""}
         <span><b>${fmtN(p.jobs_done)}</b> jobs done</span>
         <span><b>${fmtN(p.tokens_donated)}</b> tokens donated</span>
         <span><b>${p.supporters}</b> ${p.supporters === 1 ? "supporter" : "supporters"}</span>
@@ -76,13 +77,25 @@ async function viewHome() {
         <span class="chip"><b>${fmtN(stats.tokens_donated)}</b> tokens donated</span>
       </div>
     </div>
-    <div class="grid">${cards || `<div class="panel">No projects yet — <a href="#/new">create the first one</a>.</div>`}</div>
+    ${list.projects.length > 3 ? `
+    <div class="row" style="justify-content:center">
+      <input id="mkt-filter" placeholder="Filter projects — name, owner, tagline…"
+             style="max-width:360px" aria-label="Filter projects">
+    </div>` : ""}
+    <div class="grid" id="mkt-grid">${cards || `<div class="panel">No projects yet — <a href="#/new">create the first one</a>.</div>`}</div>
   `);
+
+  document.getElementById("mkt-filter")?.addEventListener("input", (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll("#mkt-grid .card").forEach((c) => {
+      c.style.display = !q || c.textContent.toLowerCase().includes(q) ? "" : "none";
+    });
+  });
 }
 
 // ------------------------------------------------------------------ project
 
-function jobDetails(j) {
+function jobDetails(j, isOwner) {
   return `
     <details>
       <summary>
@@ -91,6 +104,7 @@ function jobDetails(j) {
         <span class="muted">${esc(j.model)}${j.model_used && j.model_used !== j.model ? " → " + esc(j.model_used) : ""}</span>
         ${j.donor ? `<span class="muted">🤝 ${esc(j.donor)}</span>` : ""}
         <span class="muted">${ago(j.created_at)}</span>
+        ${isOwner && j.status === "queued" ? `<button class="btn small ghost" data-cancel="${j.id}">✕ cancel</button>` : ""}
       </summary>
       <div class="jobbody">
         <h4>Prompt</h4><pre>${esc(j.prompt)}</pre>
@@ -110,6 +124,7 @@ async function viewProject(slug) {
   ]);
   const isOwner = me?.projects?.some((x) => x.slug === slug);
   const supporting = me?.supports?.some((x) => x.slug === slug);
+  const cat = isOwner ? await getModelCatalog() : null;
   const origin = window.location.origin;
   const donors = p.donors.length
     ? `<table class="donors"><tr><th></th><th>AI Donor</th><th>Jobs</th><th>Tokens</th></tr>
@@ -160,6 +175,35 @@ async function viewProject(slug) {
       <label>Prompt</label><textarea id="job-prompt" placeholder="Prompts are public and processed by volunteer nodes — never include secrets."></textarea>
       <div class="mt"><button class="btn" id="btn-queue">Queue job</button></div>
       <div id="queue-msg"></div>
+    </div>
+
+    <div class="panel">
+      <h2>🔧 Owner tools</h2>
+      <details>
+        <summary style="cursor:pointer">✏️ Edit project</summary>
+        <div class="formrow mt">
+          <div><label>Name</label><input id="e-name" value="${esc(p.name)}"></div>
+          <div><label>Repository URL</label><input id="e-repo" value="${esc(p.repo_url)}"></div>
+        </div>
+        <label>Tagline</label><input id="e-tagline" value="${esc(p.tagline)}">
+        <label>Description</label><textarea id="e-desc">${esc(p.description)}</textarea>
+        <div class="formrow">
+          <div><label>Preferred model</label>${modelSelect("e-model", cat.providers, p.model)}</div>
+          <div><label>Fallback model</label>${modelSelect("e-fallback", cat.providers, p.fallback_model || "", "— none —")}</div>
+        </div>
+        <div class="formrow">
+          <div><label>Temperature (API/local runners)</label><input id="e-temp" type="number" step="0.1" min="0" max="2" value="${p.temperature ?? ""}"></div>
+          <div><label>Max output tokens</label><input id="e-maxtok" type="number" min="1" value="${p.max_tokens ?? ""}"></div>
+        </div>
+        <div class="mt"><button class="btn" id="btn-save-project">Save changes</button></div>
+        <div id="edit-msg"></div>
+      </details>
+      <div class="row mt">
+        <button class="btn small ghost" id="btn-rotate">🔑 Rotate inference key</button>
+        <span class="muted small">leaked or lost the sci_ key? Mint a new one — the old key
+        stops working instantly.</span>
+      </div>
+      <div id="rotate-out"></div>
     </div>` : ""}
 
     <div class="panel">
@@ -174,7 +218,7 @@ async function viewProject(slug) {
 
     <div class="panel">
       <h2>Job feed <span class="muted small">(public, refreshes live)</span></h2>
-      <div class="joblist" id="joblist">${jobs.jobs.map(jobDetails).join("") || `<p class="muted small">Nothing queued yet.</p>`}</div>
+      <div class="joblist" id="joblist">${jobs.jobs.map((j) => jobDetails(j, isOwner)).join("") || `<p class="muted small">Nothing queued yet.</p>`}</div>
     </div>
 
     <dialog class="modal" id="dlg-supporters">
@@ -247,21 +291,69 @@ async function viewProject(slug) {
       });
       msg.innerHTML = `<p class="ok">Queued as job #${r.job_id} — a supporting node will pick it up.</p>`;
       document.getElementById("job-prompt").value = "";
-      refreshJobs(slug);
+      refreshJobs(slug, isOwner);
     } catch (e) { msg.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
   });
 
-  refreshTimer = setInterval(() => refreshJobs(slug), 5000);
+  // Owner: cancel queued jobs straight from the feed (delegated — the list
+  // re-renders every few seconds, the container does not).
+  document.getElementById("joblist").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-cancel]");
+    if (!b) return;
+    e.preventDefault();
+    try {
+      await api(`/api/jobs/${b.dataset.cancel}/cancel`, { method: "POST" });
+      refreshJobs(slug, isOwner);
+    } catch (err) { alert(err.message); }
+  });
+
+  document.getElementById("btn-save-project")?.addEventListener("click", async () => {
+    const msg = document.getElementById("edit-msg");
+    const num = (id) => {
+      const v = document.getElementById(id).value;
+      return v === "" ? null : Number(v);
+    };
+    try {
+      await api(`/api/projects/${slug}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: document.getElementById("e-name").value,
+          repo_url: document.getElementById("e-repo").value,
+          tagline: document.getElementById("e-tagline").value,
+          description: document.getElementById("e-desc").value,
+          model: document.getElementById("e-model").value,
+          fallback_model: document.getElementById("e-fallback").value,
+          temperature: num("e-temp"),
+          max_tokens: num("e-maxtok"),
+        }),
+      });
+      msg.innerHTML = `<p class="ok">Saved.</p>`;
+      setTimeout(() => viewProject(slug), 500);
+    } catch (e) { msg.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  });
+
+  document.getElementById("btn-rotate")?.addEventListener("click", async () => {
+    if (!confirm("Rotate this project's inference key? Every tool using the old key stops working immediately.")) return;
+    try {
+      const r = await api(`/api/projects/${slug}/rotate_key`, { method: "POST" });
+      document.getElementById("rotate-out").innerHTML = `
+        <div class="notice"><b>New inference key — shown exactly once:</b>
+        <div class="keybox">${esc(r.inference_key)}</div>
+        Update every client pointed at this project; the old key is dead.</div>`;
+    } catch (e) { alert(e.message); }
+  });
+
+  refreshTimer = setInterval(() => refreshJobs(slug, isOwner), 5000);
 }
 
-async function refreshJobs(slug) {
+async function refreshJobs(slug, isOwner) {
   try {
     const jobs = await api(`/api/projects/${slug}/jobs`);
     const el = document.getElementById("joblist");
     const open = new Set([...(el?.querySelectorAll("details[open]") || [])]
       .map((d) => d.querySelector("summary .grow")?.textContent));
     if (el) {
-      el.innerHTML = jobs.jobs.map(jobDetails).join("") || `<p class="muted small">Nothing queued yet.</p>`;
+      el.innerHTML = jobs.jobs.map((j) => jobDetails(j, isOwner)).join("") || `<p class="muted small">Nothing queued yet.</p>`;
       el.querySelectorAll("details").forEach((d) => {
         if (open.has(d.querySelector("summary .grow")?.textContent)) d.open = true;
       });
@@ -357,9 +449,15 @@ function modelSelect(id, providers, selected, noneLabel) {
     <optgroup label="${esc(vendor)}">
       ${models.map((m) => `<option value="${esc(m)}" ${m === selected ? "selected" : ""}>${esc(m)}</option>`).join("")}
     </optgroup>`).join("");
+  // A previously-saved model may no longer be in the live catalog; keep it
+  // selectable so editing a project can't silently reassign its model.
+  const known = Object.values(providers).some((list) => list.includes(selected));
+  const current = selected && !known
+    ? `<optgroup label="Current"><option value="${esc(selected)}" selected>${esc(selected)}</option></optgroup>`
+    : "";
   return `<select id="${id}">
     ${noneLabel ? `<option value="" ${!selected ? "selected" : ""}>${noneLabel}</option>` : ""}
-    ${groups}
+    ${current}${groups}
   </select>`;
 }
 
@@ -514,7 +612,9 @@ async function viewAccount() {
     <tr><td><span class="dot ${n.online ? "on" : "off"}"></span>${esc(n.name)}</td>
     <td class="muted">${esc((n.runners || []).join(", ") || "—")}</td>
     <td class="muted">${esc((n.models || []).join(", ") || "—")}</td>
-    <td>${fmtN(n.jobs_done)}</td></tr>`).join("");
+    <td>${fmtN(n.jobs_done)}</td>
+    <td><button class="btn small ghost" data-revoke="${n.id}"
+        title="Token stops working instantly; past donations stay credited">revoke</button></td></tr>`).join("");
 
   render(`
     <div class="panel">
@@ -534,7 +634,7 @@ async function viewAccount() {
 
     <div class="panel">
       <h2>🖥️ My nodes</h2>
-      ${nodes ? `<table class="donors"><tr><th>Node</th><th>Runners</th><th>Models</th><th>Jobs done</th></tr>${nodes}</table>`
+      ${nodes ? `<table class="donors"><tr><th>Node</th><th>Runners</th><th>Models</th><th>Jobs done</th><th></th></tr>${nodes}</table>`
               : `<p class="muted small">No nodes yet. Generate a pairing code and run the connector.</p>`}
       <div class="mt row">
         <button class="btn" id="btn-pair">Generate pairing code</button>
@@ -562,6 +662,14 @@ async function viewAccount() {
   `);
 
   document.getElementById("btn-logout").addEventListener("click", () => { setKey(""); viewAccount(); });
+  document.querySelectorAll("[data-revoke]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Revoke this node's token? It stops serving immediately; past donations stay credited.")) return;
+      try {
+        await api(`/api/nodes/${b.dataset.revoke}`, { method: "DELETE" });
+        viewAccount();
+      } catch (e) { alert(e.message); }
+    }));
   document.getElementById("btn-codes").addEventListener("click", async () => {
     if (!confirm("Generate a new set? Your previous unused recovery codes stop working.")) return;
     try {
@@ -841,8 +949,13 @@ print(r.choices[0].message.content)</pre>
 > GET  /api/jobs/7/wait?timeout=120               → long-poll until done</pre>
       <h3>Everything else</h3>
       <pre class="code">POST /api/register                 create account → account key (once)
+GET  /api/health                   liveness + uptime (for monitors)
 GET  /api/projects                 marketplace
 GET  /api/projects/&lt;slug&gt;          project + donors
+PATCH /api/projects/&lt;slug&gt;         owner: edit name/models/settings
+POST /api/projects/&lt;slug&gt;/rotate_key  owner: fresh inference key
+POST /api/jobs/&lt;id&gt;/cancel         owner: cancel a queued job
+DELETE /api/nodes/&lt;id&gt;             revoke a node token
 GET  /api/projects/&lt;slug&gt;/supporters  who volunteers for this queue
 GET  /api/accounts/&lt;name&gt;          public profile: apps + donations
 GET  /api/nodes/me                 (node token) node self-status

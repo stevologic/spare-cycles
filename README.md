@@ -1,5 +1,7 @@
 # ♻️ SpareCycles
 
+![CI](https://github.com/stevologic/spare-cycles/actions/workflows/ci.yml/badge.svg)
+
 **Some devs have tokens and no ideas. Some have ideas and no tokens.**
 
 SpareCycles is a marketplace of vibe-coding projects and a pool of donated AI
@@ -90,6 +92,25 @@ Jobs carry the project's **model preference + fallback**, **temperature**,
 and **max_tokens**; nodes only claim jobs whose model they declared they can
 serve. CLI runners apply what their CLI supports; the direct-API runners
 honor temperature/max_tokens exactly.
+
+**Karma (v1):** projects whose owners donate get a modest queue boost — at
+equal priority, a donor's job is claimed before a non-donor's, FIFO otherwise.
+Boolean, not proportional, so newcomers queue behind donors but are never
+starved. Donating is how you cut your own queue time.
+
+## Tests & deploying
+
+```bash
+pip install -r server/requirements.txt -r requirements-dev.txt
+pytest
+```
+
+52 tests cover the API surface, queue protocol, recovery paths, karma
+ordering, and a full realtime round-trip through a live server and the real
+connector script; CI runs them on Linux and Windows. See
+[DEPLOY.md](DEPLOY.md) for the droplet/systemd/Caddy production guide —
+the short version is `uvicorn server.main:app` behind any HTTPS proxy, with
+`GET /api/health` for your uptime monitor.
 
 ## Safety model (short version)
 

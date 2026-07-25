@@ -20,6 +20,7 @@ import json
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -27,6 +28,15 @@ import urllib.error
 import urllib.request
 from fnmatch import fnmatch
 from pathlib import Path
+
+# Piped output (logs, systemd journal, CI capture) may default to a legacy
+# codepage on Windows; force UTF-8 so status glyphs don't turn to mojibake.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001 — cosmetic only, never fatal
+            pass
 
 CONFIG_DIR = Path(os.environ.get("SPARECYCLES_HOME", Path.home() / ".sparecycles"))
 CONFIG_PATH = CONFIG_DIR / "node.json"
@@ -402,7 +412,16 @@ def main() -> int:
             return 0
 
 
+def _graceful_term(signum, frame):  # noqa: ARG001 — signal signature
+    """systemd / docker stop send SIGTERM; exit as cleanly as Ctrl+C."""
+    raise KeyboardInterrupt
+
+
 if __name__ == "__main__":
+    try:
+        signal.signal(signal.SIGTERM, _graceful_term)
+    except (ValueError, OSError):
+        pass  # exotic host — worst case we exit less gracefully
     try:
         sys.exit(main())
     except KeyboardInterrupt:

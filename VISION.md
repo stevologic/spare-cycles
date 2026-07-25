@@ -139,7 +139,10 @@ credits; credits give *your* projects priority in the queue when you're the
 one out of tokens. Tit-for-tat turns one-way charity into a flywheel:
 tonight my idle Max serves your issue queue, next week your nodes carry me
 past my rate limit. (Credits are never purchasable — that would re-import
-every payment/ToS problem we just avoided.)
+every payment/ToS problem we just avoided.) *v1 is shipped:* projects whose
+owners have completed donations are claimed before non-donors at equal
+priority — deliberately boolean rather than proportional so newcomers are
+delayed, never starved. The spendable ledger is the roadmap version.
 
 **AI Donors as a first-class identity.** Public donor leaderboards per
 project and globally; "Powered by 12 AI Donors" badges for READMEs; donor
@@ -182,9 +185,14 @@ and the strongest spam deterrent available.
 | Runners: claude/codex/gemini/grok/cursor CLIs, direct Anthropic/OpenAI/xAI APIs, echo | ✅ |
 | Offline model runners: Ollama + LM Studio auto-detected, installed models advertised to the pool | ✅ |
 | Keys stay in node env vars; never transmitted, never stored server-side | ✅ |
-| Karma credits ledger | roadmap |
+| Karma v1: donors-first queue boost (boolean, never starves newcomers) | ✅ |
+| Owner tools: edit project, rotate inference key, cancel jobs, revoke nodes | ✅ |
+| Account recovery: one-time codes + node-based key minting | ✅ |
+| Rate limiting on registration and recovery-code attempts | ✅ |
+| Test suite (52 tests incl. live realtime round-trip) + CI on Linux/Windows | ✅ |
+| Karma credits as a spendable ledger (proportional priority) | roadmap |
 | GitHub `issue` job kind → branch → PR | roadmap |
-| Pledge scheduling, trusted-donor tiers, ollama runner, spot-checks | roadmap |
+| Pledge scheduling, trusted-donor tiers, spot-checks | roadmap |
 
 The MVP is deliberately one `pip install` + one script, because the entire
 thesis is that this must be *clean and simple to run* — a vibe coder should

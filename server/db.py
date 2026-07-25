@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS nodes(
   models TEXT NOT NULL DEFAULT '[]',
   last_seen REAL,
   jobs_done INTEGER NOT NULL DEFAULT 0,
-  created_at REAL NOT NULL
+  created_at REAL NOT NULL,
+  revoked_at REAL
 );
 CREATE TABLE IF NOT EXISTS supports(
   account_id INTEGER NOT NULL REFERENCES accounts(id),
@@ -121,6 +122,12 @@ def init() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # Lightweight migrations for databases created before a column existed.
+        for stmt in ("ALTER TABLE nodes ADD COLUMN revoked_at REAL",):
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already there
 
 
 def new_key(prefix: str) -> tuple[str, str]:
