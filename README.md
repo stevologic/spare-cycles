@@ -46,62 +46,112 @@ key: trade a recovery code on the Account page (`POST /api/recover`), or run
 `python connector/node_connector.py --recover` on any machine with a paired
 node — possession of a paired node proves account ownership.
 
-## Connect a node (become a donor)
+## Become a donor — three ways
 
-On any machine that has an AI CLI (`claude`, `codex`, `gemini`, `grok`,
-`cursor-agent`), a metered provider key in the environment
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`), **or a local model
-server** — Ollama (`:11434`) and LM Studio (`:1234`) are auto-detected and
-your installed models are advertised to the pool by name:
+Every path starts the same: sign in on the pool's web UI → **Account** →
+*Generate pairing code*. Your provider keys **never leave your machine** —
+only prompts and answers move. Then pick whichever fits:
 
-1. Web UI → **Account** → *Generate pairing code*
-2. ```bash
-   python connector/node_connector.py --server http://localhost:8377 --code XXXX-XXXX
-   ```
-3. **Support** projects in the marketplace. Your node serves only queues you
-   opted into, and every completed job credits you on the project page.
+| | Best for |
+|---|---|
+| [1 · Your own machine](#1--your-own-machine) | laptops & desktops with AI CLIs, keys, or Ollama/LM Studio |
+| [2 · Docker](#2--docker) | servers, NAS boxes, "just keep it running" |
+| [3 · GitHub Action](#3--github-action-donate-your-ci-minutes) | donating your repo's spare CI minutes on a schedule |
 
-The connector is stdlib-only Python — nothing to install. It re-runs with no
-arguments after the first pairing (`~/.sparecycles/node.json` holds the node
-token; never your provider keys). A built-in `echo` runner
-(`--runners echo`) lets you test the full loop without spending a token.
+### 1 · Your own machine
 
-Once it's running in the background, check on it any time — read-only, so it
-is safe alongside a polling connector:
+Needs only Python 3.11+ — the connector is one file, zero pip installs.
 
 ```bash
-python connector/node_connector.py --status
+# pair once — after this it remembers you (~/.sparecycles/node.json)
+python connector/node_connector.py --server https://your-pool.example.com --code AB12-CD34
 ```
 
-It prints the runners this machine can serve, whether the pool sees your node
-as online, which queues it serves, and its last few jobs.
+```bash
+# every time after that
+python connector/node_connector.py
+```
 
-## Donate your CI minutes (GitHub Action)
+It auto-detects what you can donate with — `claude` / `codex` / `gemini` /
+`grok` / `cursor-agent` CLIs, metered keys in env (`ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, `XAI_API_KEY`), or a local **Ollama** (`:11434`) /
+**LM Studio** (`:1234`) — and advertises exactly those models to the pool.
 
-Your repo's Actions runners can check in as donor nodes too — a scheduled
-workflow that serves the queue for N minutes, then leaves:
+```bash
+python connector/node_connector.py --status        # am I online? what am I serving?
+python connector/node_connector.py --runners echo  # test the loop, spend nothing
+python connector/node_connector.py --max-seconds 1200 --idle-exit 120  # a bounded shift
+```
+
+Run it in the background with `nohup … &`, a systemd unit
+([DEPLOY.md](DEPLOY.md) has one), or Task Scheduler — it reconnects on its
+own and exits cleanly on SIGTERM.
+
+### 2 · Docker
+
+The image is published at **`ghcr.io/stevologic/spare-cycles`** (amd64 + arm64,
+so a Raspberry Pi works).
+
+```bash
+# pair once — the node identity is saved into the named volume
+docker run -it -v sparecycles:/data ghcr.io/stevologic/spare-cycles \
+  --server https://your-pool.example.com --code AB12-CD34
+```
+
+```bash
+# serve forever — pass whichever provider keys you donate with
+docker run -d --name sparecycles-node --restart unless-stopped \
+  -v sparecycles:/data \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  ghcr.io/stevologic/spare-cycles
+```
+
+Donating a local Ollama through the container:
+
+```bash
+docker run -d --restart unless-stopped -v sparecycles:/data \
+  --add-host=host.docker.internal:host-gateway \
+  -e OLLAMA_HOST=http://host.docker.internal:11434 \
+  ghcr.io/stevologic/spare-cycles
+```
+
+Watch it work with `docker logs -f sparecycles-node`; check health with
+`docker run --rm -v sparecycles:/data ghcr.io/stevologic/spare-cycles --status`.
+
+### 3 · GitHub Action (donate your CI minutes)
+
+A scheduled workflow checks in, serves the queue for N minutes, and leaves —
+quitting early if there's no work.
+
+**Step 1 — get a node token.** Pair once on any machine (either command from
+options 1–2), then copy `node_token` (`scn_…`) out of
+`~/.sparecycles/node.json` (Docker: `docker run --rm -v sparecycles:/data
+--entrypoint cat ghcr.io/stevologic/spare-cycles /data/node.json`).
+
+**Step 2 — add repo secrets** (Settings → Secrets → Actions):
+`SPARECYCLES_NODE_TOKEN`, plus the provider keys you donate with
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` — any subset).
+
+**Step 3 — add the workflow.** Copy
+[examples/donate.yml](examples/donate.yml) to
+`.github/workflows/donate.yml`, or write your own:
 
 ```yaml
 - uses: stevologic/spare-cycles@main
   with:
     server: https://your-pool.example.com
     node-token: ${{ secrets.SPARECYCLES_NODE_TOKEN }}
-    models: "claude*,gpt*"
+    models: "claude*,gpt*"   # what you're willing to serve
     minutes: 20
-    idle-exit: 120        # quit early if the queue stays empty
-  env:                     # provider keys = which runners you donate with
+    idle-exit: 120           # quit early if the queue stays empty
+  env:                       # provider keys = which runners you donate with
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
 ```
 
-Full copy-paste workflow (nightly cron + manual trigger) in
-[examples/donate.yml](examples/donate.yml). The node token comes from pairing
-once anywhere (`node_connector.py --server … --code …` → copy `node_token`
-out of `~/.sparecycles/node.json` into a repo secret). CI hosts have no AI
-CLIs, so donations flow through the direct API runners — metered keys, the
-ToS-clean way to give. Time-boxed check-ins also work anywhere else:
-`node_connector.py --max-seconds 1200 --idle-exit 120`.
+CI runners have no AI CLIs, so Action donations flow through the direct API
+runners — metered keys, the ToS-clean way to give.
 
 ## Use the pool from your tools
 
