@@ -178,7 +178,7 @@ equal priority, a donor's job is claimed before a non-donor's, FIFO otherwise.
 Boolean, not proportional, so newcomers queue behind donors but are never
 starved. Donating is how you cut your own queue time.
 
-## Tests & deploying
+## Tests
 
 ```bash
 pip install -r server/requirements.txt -r requirements-dev.txt
@@ -189,16 +189,86 @@ pytest
 ordering, and a full realtime round-trip through a live server and the real
 connector script; CI runs them on Linux and Windows.
 
-Production deploy is one command on a fresh droplet — Docker Compose with
-automatic HTTPS (Caddy) and automatic image updates (Watchtower):
+## Deploy to the internet (DigitalOcean droplet)
+
+The pool never runs inference, so the **cheapest droplet works** ($6/mo,
+1 GB RAM). Everything below also applies to any Ubuntu VPS.
+
+### 1 · Create the droplet
+
+Ubuntu 24.04 (or 22.04), any size, SSH key auth. Note its public IP.
+
+### 2 · Point DNS at it
+
+Add an **A record** — e.g. `pool.yourdomain.com → <droplet IP>`. This must
+resolve before HTTPS can be issued; if you want to try things first, skip it
+and use plain HTTP on the IP (step 3 works either way).
+
+### 3 · One command on the droplet
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/stevologic/spare-cycles/main/deploy/setup-droplet.sh \
-  | sudo DOMAIN=pool.example.com bash
+  | sudo DOMAIN=pool.yourdomain.com bash
 ```
 
-Details (plus the bare-metal systemd path) in [DEPLOY.md](DEPLOY.md);
-`GET /api/health` for your uptime monitor.
+(No domain yet? Leave `DOMAIN=` off — it serves HTTP on the IP. Re-run the
+same command with the domain later; it's idempotent.)
+
+That installs Docker, opens the firewall (SSH/80/443 only), and starts the
+stack in `/opt/sparecycles`:
+
+| Piece | Job |
+|---|---|
+| `server` | `ghcr.io/stevologic/spare-cycles-server` — API + web UI, SQLite in the `sc-data` volume |
+| `caddy` | automatic Let's Encrypt HTTPS, long-poll-safe proxying |
+| `watchtower` | pulls the latest server image every 5 min, restarts cleanly |
+| `restart: unless-stopped` + Docker on boot | survives crashes and reboots |
+
+### 4 · First run
+
+1. Open `https://pool.yourdomain.com` → **Account** → create your account.
+   **Save the API key and the five recovery codes** — they are shown once.
+2. Create your first project (you'll get its `sci_` inference key — save it).
+3. **Account → Generate pairing code**, then connect your first node from any
+   machine with tokens to spare:
+   ```bash
+   python connector/node_connector.py --server https://pool.yourdomain.com --code AB12-CD34
+   ```
+4. Optional — live model catalogs in the New-project form: put provider keys
+   in `/opt/sparecycles/.env` (`ANTHROPIC_API_KEY=` etc., metadata only,
+   never used for inference), then `cd /opt/sparecycles && docker compose up -d`.
+
+### Day-2 operations
+
+```bash
+cd /opt/sparecycles
+docker compose ps                  # is everything up?
+docker compose logs -f server      # watch the pool work
+curl -s localhost/api/health       # {"ok":true,...} — point your uptime monitor here
+bash update.sh                     # manual update (Watchtower does it automatically)
+```
+
+Backup (cron-friendly — everything lives in one SQLite file in the
+`sc-data` volume):
+
+```bash
+docker compose exec -T server python -c \
+  "import sqlite3; sqlite3.connect('/data/sparecycles.db').execute(\"VACUUM INTO '/data/backup.db'\")" \
+  && docker cp "$(docker compose ps -q server)":/data/backup.db ./sparecycles-$(date +%F).db
+```
+
+Restore: copy a backup over `/data/sparecycles.db` in the volume and
+`docker compose restart server`.
+
+### If something's off
+
+- **No HTTPS certificate** → DNS isn't resolving yet (`dig pool.yourdomain.com`).
+  Caddy retries on its own once the record propagates.
+- **Site unreachable** → `docker compose ps` (all three services should be
+  `running`), then `docker compose logs caddy`.
+- Port `8377` is deliberately **not** public — all traffic goes through Caddy.
+- More (bare-metal systemd path, Cloudflare tunnel, nginx timeouts):
+  [DEPLOY.md](DEPLOY.md).
 
 ## Safety model (short version)
 
